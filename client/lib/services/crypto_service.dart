@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'storage_service.dart';
 
 /// E2E encryption using X25519 key exchange + AES-256-GCM.
@@ -14,6 +16,7 @@ class CryptoService {
   static final _x25519 = X25519();
   static final _aesGcm = AesGcm.with256bits();
   static final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+  static const _pbkdf2Iterations = 600000;
 
   /// Generate a new X25519 key pair and persist private key.
   static Future<SimpleKeyPair> generateKeyPair() async {
@@ -128,4 +131,86 @@ class CryptoService {
       return null;
     }
   }
+
+  // ── Key backup: PBKDF2 + AES-256-GCM wrapping ───────────────────────────
+
+  /// Derive a 256-bit wrapping key from [password] and [salt] using PBKDF2.
+  static Future<SecretKey> _deriveWrappingKey(String password, List<int> salt) async {
+    final pbkdf2 = Pbkdf2(
+      macAlgorithm: Hmac.sha256(),
+      iterations: _pbkdf2Iterations,
+      bits: 256,
+    );
+    return pbkdf2.deriveKey(
+      secretKey: SecretKey(utf8.encode(password)),
+      nonce: salt,
+    );
+  }
+
+  /// Encrypt a private key with a password-derived wrapping key.
+  /// Returns base64url-encoded encrypted blob, salt, and nonce.
+  /// Runs PBKDF2 in an isolate to avoid blocking the UI.
+  static Future<({String encryptedPrivateKey, String keySalt, String keyNonce})>
+      encryptPrivateKey(List<int> privKeyBytes, String password) async {
+    final rng = Random.secure();
+    final salt = Uint8List.fromList(List.generate(16, (_) => rng.nextInt(256)));
+
+    final wrappingKey = await compute(
+      _pbkdf2Isolate,
+      _Pbkdf2Params(password, salt),
+    );
+
+    final secretBox = await _aesGcm.encrypt(
+      privKeyBytes,
+      secretKey: wrappingKey,
+    );
+    final combined = Uint8List.fromList([...secretBox.cipherText, ...secretBox.mac.bytes]);
+    return (
+      encryptedPrivateKey: base64Url.encode(combined),
+      keySalt: base64Url.encode(salt),
+      keyNonce: base64Url.encode(secretBox.nonce),
+    );
+  }
+
+  /// Decrypt a private key blob with the user's password.
+  /// Returns the raw private key bytes, or null if decryption fails (wrong password).
+  static Future<List<int>?> decryptPrivateKey(
+    String encryptedB64, String saltB64, String nonceB64, String password,
+  ) async {
+    try {
+      final salt = base64Url.decode(saltB64);
+      final wrappingKey = await compute(
+        _pbkdf2Isolate,
+        _Pbkdf2Params(password, salt),
+      );
+      final raw = base64Url.decode(encryptedB64);
+      final mac = Mac(raw.sublist(raw.length - 16));
+      final cipherBytes = raw.sublist(0, raw.length - 16);
+      final nonce = base64Url.decode(nonceB64);
+      final secretBox = SecretBox(cipherBytes, nonce: nonce, mac: mac);
+      return await _aesGcm.decrypt(secretBox, secretKey: wrappingKey);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Helper class for passing params to the PBKDF2 isolate.
+class _Pbkdf2Params {
+  final String password;
+  final List<int> salt;
+  const _Pbkdf2Params(this.password, this.salt);
+}
+
+/// Top-level function for compute() isolate.
+Future<SecretKey> _pbkdf2Isolate(_Pbkdf2Params params) async {
+  final pbkdf2 = Pbkdf2(
+    macAlgorithm: Hmac.sha256(),
+    iterations: 600000,
+    bits: 256,
+  );
+  return pbkdf2.deriveKey(
+    secretKey: SecretKey(utf8.encode(params.password)),
+    nonce: params.salt,
+  );
 }

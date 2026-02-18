@@ -5,6 +5,9 @@ class ZippUser {
   final String? displayName;
   final String? avatarUrl;
   final String? publicKey;
+  final String? encryptedPrivateKey;
+  final String? keySalt;
+  final String? keyNonce;
   final bool emailVerified;
   final bool isAdmin;
   final bool hasPassword;
@@ -18,6 +21,9 @@ class ZippUser {
     this.displayName,
     this.avatarUrl,
     this.publicKey,
+    this.encryptedPrivateKey,
+    this.keySalt,
+    this.keyNonce,
     required this.emailVerified,
     required this.isAdmin,
     required this.hasPassword,
@@ -34,6 +40,9 @@ class ZippUser {
         displayName: json['displayName'] as String?,
         avatarUrl: json['avatarUrl'] as String?,
         publicKey: json['publicKey'] as String?,
+        encryptedPrivateKey: json['encryptedPrivateKey'] as String?,
+        keySalt: json['keySalt'] as String?,
+        keyNonce: json['keyNonce'] as String?,
         emailVerified: json['emailVerified'] as bool? ?? false,
         isAdmin: json['isAdmin'] as bool? ?? false,
         hasPassword: json['hasPassword'] as bool? ?? false,

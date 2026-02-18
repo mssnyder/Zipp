@@ -202,10 +202,14 @@ class ChatProvider extends ChangeNotifier {
     required Map<String, dynamic> attachment,
     required String recipientId,
     required String type, // IMAGE | VIDEO | FILE
+    String? caption,
   }) async {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
+    if (caption != null && caption.isNotEmpty) {
+      attachment['caption'] = caption;
+    }
     final payload = jsonEncode(attachment);
     final encRecipient = await CryptoService.encrypt(payload, keyPair!, recipientKey);
     final sharedNonce = base64Url.decode(encRecipient.nonce);

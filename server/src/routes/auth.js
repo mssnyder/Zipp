@@ -30,6 +30,7 @@ const oauthCompleteSchema = yup.object({
     .matches(/^[a-zA-Z0-9_]+$/, "alphanumeric and underscores only")
     .required(),
   displayName: yup.string().max(50).optional(),
+  password: yup.string().min(8).max(100).required("Password is required for end-to-end encryption"),
 });
 
 function formatUser(user) {
@@ -300,7 +301,7 @@ export default (app, prisma) => {
         });
       if (!body) return reply;
 
-      const { username, displayName } = body;
+      const { username, displayName, password } = body;
       const { provider, providerAccountId, email, firstName, lastName } = pending;
 
       const taken = await prisma.user.findFirst({
@@ -314,6 +315,7 @@ export default (app, prisma) => {
             email,
             username,
             displayName: displayName || `${firstName} ${lastName}`.trim() || username,
+            hashedPassword: await hashPassword(password),
             emailVerified: true, // Google emails are verified
           },
         });

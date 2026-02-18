@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:cryptography/cryptography.dart';
 import '../models/user.dart';
@@ -12,6 +13,10 @@ class AuthProvider extends ChangeNotifier {
   SimpleKeyPair? _keyPair;
   bool _loading = false;
   String? _error;
+
+  /// Transient password used during login to decrypt/encrypt key backup.
+  /// Cleared immediately after use.
+  String? _loginPassword;
 
   AuthProvider(this._api);
 
@@ -35,7 +40,7 @@ class AuthProvider extends ChangeNotifier {
     } finally {
       _setLoading(false);
     }
-    // Key upload is best-effort: a failure must not log the user out
+    // No password available — can only load local key.
     if (_user != null) {
       try {
         await _ensureKeyPair();
@@ -55,10 +60,13 @@ class AuthProvider extends ChangeNotifier {
     } finally {
       _setLoading(false);
     }
-    // Key upload is best-effort: a failure must not invalidate the session
+    // Key management is best-effort — must not invalidate the session
     try {
+      _loginPassword = password;
       await _ensureKeyPair();
-    } catch (_) {}
+    } catch (_) {} finally {
+      _loginPassword = null;
+    }
     notifyListeners();
   }
 
@@ -85,21 +93,107 @@ class AuthProvider extends ChangeNotifier {
     await _api.logout();
     _user = null;
     _keyPair = null;
+    _loginPassword = null;
     await StorageService.clearSession();
     notifyListeners();
   }
 
+  /// Core key management logic.
+  ///
+  /// 1. Try loading local key from secure storage.
+  /// 2. If no local key AND password available AND server has encrypted backup:
+  ///    download + decrypt backup, store locally.
+  /// 3. If still no local key: generate a new key pair.
+  /// 4. If local public key differs from server's: upload public key.
+  ///    If password available, also encrypt + upload private key backup.
   Future<void> _ensureKeyPair() async {
+    // Step 1: try local key
     _keyPair = await CryptoService.loadKeyPair();
+
+    // Step 2: try restoring from server backup (only if we have a password)
+    if (_keyPair == null && _loginPassword != null && _user != null) {
+      _keyPair = await _tryRestoreFromBackup(_loginPassword!);
+    }
+
+    // Step 3: generate new key pair if still no key
     if (_keyPair == null) {
       _keyPair = await CryptoService.generateKeyPair();
     }
-    // Always sync: if the server's stored key doesn't match this device's local
-    // key (e.g. another device logged in and overwrote it), re-upload so that
-    // messages encrypted for THIS device's key can be decrypted here.
+
+    // Step 4: sync with server
     final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
     if (_user?.publicKey != localPub) {
-      await _api.uploadPublicKey(localPub);
+      if (_loginPassword != null) {
+        // Encrypt and upload both public key and private key backup
+        final privBytes = await _keyPair!.extractPrivateKeyBytes();
+        final backup = await CryptoService.encryptPrivateKey(privBytes, _loginPassword!);
+        await _api.uploadPublicKey(
+          localPub,
+          encryptedPrivateKey: backup.encryptedPrivateKey,
+          keySalt: backup.keySalt,
+          keyNonce: backup.keyNonce,
+        );
+      } else {
+        await _api.uploadPublicKey(localPub);
+      }
+    } else if (_loginPassword != null && _user?.encryptedPrivateKey == null) {
+      // Key matches server but no backup exists yet — upload backup
+      final privBytes = await _keyPair!.extractPrivateKeyBytes();
+      final backup = await CryptoService.encryptPrivateKey(privBytes, _loginPassword!);
+      await _api.uploadPublicKey(
+        localPub,
+        encryptedPrivateKey: backup.encryptedPrivateKey,
+        keySalt: backup.keySalt,
+        keyNonce: backup.keyNonce,
+      );
+    }
+  }
+
+  /// Try to download and decrypt the private key backup from the server.
+  Future<SimpleKeyPair?> _tryRestoreFromBackup(String password) async {
+    if (_user == null) return null;
+    try {
+      final keys = await _api.fetchOwnKeys(_user!.id);
+      final enc = keys['encryptedPrivateKey'];
+      final salt = keys['keySalt'];
+      final nonce = keys['keyNonce'];
+      if (enc == null || salt == null || nonce == null) return null;
+
+      final privBytes = await CryptoService.decryptPrivateKey(enc, salt, nonce, password);
+      if (privBytes == null) return null;
+
+      // Store locally and load as key pair
+      await StorageService.setPrivateKey(base64Url.encode(privBytes));
+      return await CryptoService.loadKeyPair();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Manual restore for settings UI — user enters password to restore key from backup.
+  Future<bool> restoreKeyFromBackup(String password) async {
+    if (_user == null) return false;
+    try {
+      final kp = await _tryRestoreFromBackup(password);
+      if (kp == null) return false;
+      _keyPair = kp;
+
+      // Sync public key with server if needed
+      final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
+      if (_user?.publicKey != localPub) {
+        final privBytes = await _keyPair!.extractPrivateKeyBytes();
+        final backup = await CryptoService.encryptPrivateKey(privBytes, password);
+        await _api.uploadPublicKey(
+          localPub,
+          encryptedPrivateKey: backup.encryptedPrivateKey,
+          keySalt: backup.keySalt,
+          keyNonce: backup.keyNonce,
+        );
+      }
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

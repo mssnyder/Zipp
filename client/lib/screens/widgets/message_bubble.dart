@@ -303,13 +303,20 @@ class _ImageContent extends StatelessWidget {
     } catch (_) {}
     final url = data?['url'] as String?;
     if (url == null) return const _EncryptedPlaceholder();
-    return CachedNetworkImage(
-      imageUrl: api.resolveUrl(url),
-      fit: BoxFit.cover,
-      placeholder: (_, __) => const SizedBox(
-        height: 120,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CachedNetworkImage(
+          imageUrl: api.resolveUrl(url),
+          fit: BoxFit.cover,
+          placeholder: (_, __) => const SizedBox(
+            height: 120,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+        ),
+        _buildCaption(data),
+      ],
     );
   }
 }
@@ -328,35 +335,42 @@ class _VideoContent extends StatelessWidget {
     final thumbUrl = data?['thumbUrl'] as String?;
     final duration = data?['duration'] as int?;
 
-    return Stack(
-      alignment: Alignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        if (thumbUrl != null)
-          CachedNetworkImage(
-            imageUrl: api.resolveUrl(thumbUrl),
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: 200,
-          )
-        else
-          Container(height: 200, color: ZippTheme.surfaceVariant),
-        const Icon(Icons.play_circle_outline, size: 56, color: Colors.white),
-        if (duration != null)
-          Positioned(
-            bottom: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(4),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            if (thumbUrl != null)
+              CachedNetworkImage(
+                imageUrl: api.resolveUrl(thumbUrl),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 200,
+              )
+            else
+              Container(height: 200, color: ZippTheme.surfaceVariant),
+            const Icon(Icons.play_circle_outline, size: 56, color: Colors.white),
+            if (duration != null)
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _formatDuration(duration),
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                ),
               ),
-              child: Text(
-                _formatDuration(duration),
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-              ),
-            ),
-          ),
+          ],
+        ),
+        _buildCaption(data),
       ],
     );
   }
@@ -380,31 +394,38 @@ class _FileContent extends StatelessWidget {
     } catch (_) {}
 
     final size = data?['sizeBytes'] as int? ?? 0;
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.attach_file, color: Colors.white70, size: 28),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  data?['filename'] as String? ?? 'File',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.attach_file, color: Colors.white70, size: 28),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data?['filename'] as String? ?? 'File',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _formatSize(size),
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                  ],
                 ),
-                Text(
-                  _formatSize(size),
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        _buildCaption(data),
+      ],
     );
   }
 
@@ -413,6 +434,18 @@ class _FileContent extends StatelessWidget {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
+}
+
+Widget _buildCaption(Map<String, dynamic>? data) {
+  final caption = data?['caption'] as String?;
+  if (caption == null || caption.isEmpty) return const SizedBox.shrink();
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+    child: Text(
+      caption,
+      style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+    ),
+  );
 }
 
 class _EncryptedPlaceholder extends StatelessWidget {

@@ -116,11 +116,25 @@ class ApiService {
     return ZippUser.fromJson(data['user'] as Map<String, dynamic>);
   }
 
-  Future<void> changePassword({required String current, required String newPass}) async {
+  Future<void> changePassword({
+    required String current,
+    required String newPass,
+    String? encryptedPrivateKey,
+    String? keySalt,
+    String? keyNonce,
+  }) async {
     final r = await _dio.post('/api/me/password', data: {
       'currentPassword': current,
       'newPassword': newPass,
+      if (encryptedPrivateKey != null) 'encryptedPrivateKey': encryptedPrivateKey,
+      if (keySalt != null) 'keySalt': keySalt,
+      if (keyNonce != null) 'keyNonce': keyNonce,
     });
+    await _check(r);
+  }
+
+  Future<void> setPassword(String password) async {
+    final r = await _dio.post('/api/me/set-password', data: {'password': password});
     await _check(r);
   }
 
@@ -147,10 +161,34 @@ class ApiService {
     return data['publicKey'] as String?;
   }
 
-  Future<void> uploadPublicKey(String publicKey) async {
-    final r = await _dio.put('/api/keys', data: {'publicKey': publicKey});
+  /// Fetch own key data including encrypted private key backup.
+  Future<Map<String, String?>> fetchOwnKeys(String userId) async {
+    final r = await _dio.get('/api/keys/$userId');
+    if (r.statusCode == 404) return {};
+    final data = await _check(r);
+    return {
+      'publicKey': data['publicKey'] as String?,
+      'encryptedPrivateKey': data['encryptedPrivateKey'] as String?,
+      'keySalt': data['keySalt'] as String?,
+      'keyNonce': data['keyNonce'] as String?,
+    };
+  }
+
+  Future<void> uploadPublicKey(
+    String publicKey, {
+    String? encryptedPrivateKey,
+    String? keySalt,
+    String? keyNonce,
+  }) async {
+    final r = await _dio.put('/api/keys', data: {
+      'publicKey': publicKey,
+      if (encryptedPrivateKey != null) 'encryptedPrivateKey': encryptedPrivateKey,
+      if (keySalt != null) 'keySalt': keySalt,
+      if (keyNonce != null) 'keyNonce': keyNonce,
+    });
     await _check(r);
   }
+
 
   // ── Users ─────────────────────────────────────────────────────────────────
 

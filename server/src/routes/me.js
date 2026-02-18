@@ -20,6 +20,9 @@ function formatUser(user) {
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     publicKey: user.publicKey,
+    encryptedPrivateKey: user.encryptedPrivateKey ?? null,
+    keySalt: user.keySalt ?? null,
+    keyNonce: user.keyNonce ?? null,
     emailVerified: user.emailVerified,
     isAdmin: user.isAdmin,
     hasPassword: Boolean(user.hashedPassword),
@@ -41,6 +44,9 @@ const updateSchema = yup.object({
 const passwordSchema = yup.object({
   currentPassword: yup.string().required(),
   newPassword: yup.string().min(8).max(100).required(),
+  encryptedPrivateKey: yup.string().optional(),
+  keySalt: yup.string().optional(),
+  keyNonce: yup.string().optional(),
 });
 
 // Short-lived in-memory store for OAuth link tokens: token → { userId, exp }
@@ -151,9 +157,16 @@ export default async (app, prisma) => {
       const result = await verifyAndUpgrade(user.hashedPassword, body.currentPassword);
       if (!result.ok) return reply.code(400).send({ error: "Current password is incorrect" });
 
+      const data = { hashedPassword: await hashPassword(body.newPassword) };
+      // Re-encrypt E2E key backup with new password (all three must be present)
+      if (body.encryptedPrivateKey && body.keySalt && body.keyNonce) {
+        data.encryptedPrivateKey = body.encryptedPrivateKey;
+        data.keySalt = body.keySalt;
+        data.keyNonce = body.keyNonce;
+      }
       await prisma.user.update({
         where: { id: req.auth.user.id },
-        data: { hashedPassword: await hashPassword(body.newPassword) },
+        data,
       });
       return { ok: true };
     },
@@ -223,5 +236,31 @@ export default async (app, prisma) => {
     }
 
     return reply.redirect("/connect/google");
+  });
+
+  // POST /api/me/set-password — set initial password for social-only accounts
+  app.route({
+    method: "POST",
+    url: "/api/me/set-password",
+    config: { rateLimit: { max: 3, timeWindow: "10 minutes" } },
+    handler: async (req, reply) => {
+      if (!ensureAuth(req, reply)) return reply;
+
+      const user = await prisma.user.findUnique({ where: { id: req.auth.user.id } });
+      if (user.hashedPassword) {
+        return reply.code(400).send({ error: "Password already set. Use change password instead." });
+      }
+
+      const { password } = req.body || {};
+      if (!password || typeof password !== "string" || password.length < 8) {
+        return reply.code(400).send({ error: "Password must be at least 8 characters" });
+      }
+
+      await prisma.user.update({
+        where: { id: req.auth.user.id },
+        data: { hashedPassword: await hashPassword(password) },
+      });
+      return { ok: true };
+    },
   });
 };

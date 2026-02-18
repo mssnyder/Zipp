@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/crypto_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,13 +24,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _currentPwCtrl = TextEditingController();
   final _newPwCtrl = TextEditingController();
   final _confirmPwCtrl = TextEditingController();
+  final _setPwCtrl = TextEditingController();
+  final _setPwConfirmCtrl = TextEditingController();
   bool _saving = false;
   bool _changingPw = false;
+  bool _settingPw = false;
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  bool _obscureSetPw = true;
+  bool _obscureSetPwConfirm = true;
   String? _profileError;
   String? _pwError;
+  String? _setPwError;
   Timer? _linkPollTimer;
 
   @override
@@ -47,6 +54,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _currentPwCtrl.dispose();
     _newPwCtrl.dispose();
     _confirmPwCtrl.dispose();
+    _setPwCtrl.dispose();
+    _setPwConfirmCtrl.dispose();
     _linkPollTimer?.cancel();
     super.dispose();
   }
@@ -102,9 +111,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() { _changingPw = true; _pwError = null; });
     try {
+      final auth = context.read<AuthProvider>();
+      String? encPriv, kSalt, kNonce;
+      // Re-encrypt private key backup with the new password
+      if (auth.keyPair != null) {
+        final privBytes = await auth.keyPair!.extractPrivateKeyBytes();
+        final backup = await CryptoService.encryptPrivateKey(privBytes, newPw);
+        encPriv = backup.encryptedPrivateKey;
+        kSalt = backup.keySalt;
+        kNonce = backup.keyNonce;
+      }
       await context.read<ApiService>().changePassword(
         current: _currentPwCtrl.text,
         newPass: newPw,
+        encryptedPrivateKey: encPriv,
+        keySalt: kSalt,
+        keyNonce: kNonce,
       );
       _currentPwCtrl.clear();
       _newPwCtrl.clear();
@@ -115,6 +137,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _pwError = e.message);
     } finally {
       if (mounted) setState(() => _changingPw = false);
+    }
+  }
+
+  Future<void> _setPassword() async {
+    final pw = _setPwCtrl.text;
+    final confirm = _setPwConfirmCtrl.text;
+    if (pw != confirm) {
+      setState(() => _setPwError = 'Passwords do not match');
+      return;
+    }
+    if (pw.length < 8) {
+      setState(() => _setPwError = 'Password must be at least 8 characters');
+      return;
+    }
+
+    setState(() { _settingPw = true; _setPwError = null; });
+    try {
+      final api = context.read<ApiService>();
+      final auth = context.read<AuthProvider>();
+      await api.setPassword(pw);
+
+      // Encrypt and upload private key backup with the new password
+      if (auth.keyPair != null) {
+        final privBytes = await auth.keyPair!.extractPrivateKeyBytes();
+        final backup = await CryptoService.encryptPrivateKey(privBytes, pw);
+        final localPub = await CryptoService.getPublicKeyBase64(auth.keyPair!);
+        await api.uploadPublicKey(
+          localPub,
+          encryptedPrivateKey: backup.encryptedPrivateKey,
+          keySalt: backup.keySalt,
+          keyNonce: backup.keyNonce,
+        );
+      }
+
+      // Refresh user to reflect hasPassword = true
+      final updated = await api.getMe();
+      auth.updateUser(updated);
+
+      _setPwCtrl.clear();
+      _setPwConfirmCtrl.clear();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Encryption password set')));
+    } on ApiException catch (e) {
+      setState(() => _setPwError = e.message);
+    } finally {
+      if (mounted) setState(() => _settingPw = false);
     }
   }
 
@@ -280,6 +348,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const SizedBox(height: 32),
                 const Divider(),
+
+                // ── Set encryption password (for OAuth-only accounts) ─────────
+                if (!user.hasPassword) ...[
+                  const SizedBox(height: 24),
+                  Text('Set encryption password', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    'A password is required to encrypt your private key so messages can be decrypted on other devices.',
+                    style: TextStyle(fontSize: 13, color: ZippTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_setPwError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(_setPwError!, style: const TextStyle(color: ZippTheme.error)),
+                    ),
+                  TextFormField(
+                    controller: _setPwCtrl,
+                    obscureText: _obscureSetPw,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureSetPw
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _obscureSetPw = !_obscureSetPw),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _setPwConfirmCtrl,
+                    obscureText: _obscureSetPwConfirm,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _setPassword(),
+                    decoration: InputDecoration(
+                      labelText: 'Confirm password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureSetPwConfirm
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _obscureSetPwConfirm = !_obscureSetPwConfirm),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 50,
+                    child: _settingPw
+                        ? const Center(child: CircularProgressIndicator())
+                        : ElevatedButton(
+                            onPressed: _setPassword,
+                            child: const Text('Set password'),
+                          ),
+                  ),
+                  const SizedBox(height: 32),
+                  const Divider(),
+                ],
 
                 // ── Change password (only for accounts with a password) ──────
                 if (user.hasPassword) ...[

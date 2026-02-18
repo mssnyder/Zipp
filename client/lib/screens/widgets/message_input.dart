@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/message.dart';
 import '../../services/websocket_service.dart';
+import 'attachment_preview.dart';
 import 'gif_picker.dart';
 
 class MessageInput extends StatefulWidget {
@@ -17,7 +18,7 @@ class MessageInput extends StatefulWidget {
   final VoidCallback? onCancelReply;
   final Future<void> Function(String text) onSend;
   final Future<void> Function(Map<String, dynamic> gif) onSendGif;
-  final Future<void> Function(File file, String type) onSendAttachment;
+  final Future<void> Function(File file, String type, String? caption) onSendAttachment;
   final String conversationId;
 
   const MessageInput({
@@ -128,21 +129,51 @@ class _MessageInputState extends State<MessageInput> {
     );
     if (choice == null) return;
 
+    File? file;
+    String type;
     if (choice == 'image') {
       final picker = ImagePicker();
       final xf = await picker.pickImage(source: ImageSource.gallery);
       if (!mounted || xf == null) return;
-      await widget.onSendAttachment(File(xf.path), 'IMAGE');
+      file = File(xf.path);
+      type = 'IMAGE';
     } else if (choice == 'video') {
       final picker = ImagePicker();
       final xf = await picker.pickVideo(source: ImageSource.gallery);
       if (!mounted || xf == null) return;
-      await widget.onSendAttachment(File(xf.path), 'VIDEO');
+      file = File(xf.path);
+      type = 'VIDEO';
     } else if (choice == 'file') {
       final result = await FilePicker.platform.pickFiles();
       if (!mounted || result == null || result.files.single.path == null) return;
-      await widget.onSendAttachment(File(result.files.single.path!), 'FILE');
+      file = File(result.files.single.path!);
+      type = 'FILE';
+    } else {
+      return;
     }
+
+    if (!mounted) return;
+    _showAttachmentPreview(file, type);
+  }
+
+  void _showAttachmentPreview(File file, String type) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ZippTheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => AttachmentPreview(
+        file: file,
+        type: type,
+        onSend: widget.onSendAttachment,
+      ),
+    );
+  }
+
+  /// Show attachment preview for an externally provided file (e.g. drag-and-drop).
+  void showPreviewForFile(File file, String type) {
+    _showAttachmentPreview(file, type);
   }
 
   @override

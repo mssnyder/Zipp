@@ -12,6 +12,7 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../services/api_service.dart';
 import '../services/websocket_service.dart';
+import 'widgets/attachment_preview.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/message_input.dart';
 import 'widgets/typing_indicator.dart';
@@ -93,7 +94,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
-  Future<void> _sendAttachment(File file, String type) async {
+  Future<void> _sendAttachment(File file, String type, String? caption) async {
     final api = context.read<ApiService>();
     final chat = context.read<ChatProvider>();
     try {
@@ -103,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
         attachment: attachment,
         recipientId: widget.participantId,
         type: type,
+        caption: caption,
       );
       _scrollToBottom();
     } catch (e) {
@@ -123,7 +125,19 @@ class _ChatScreenState extends State<ChatScreen> {
         'jpg': 'IMAGE', 'jpeg': 'IMAGE', 'png': 'IMAGE', 'gif': 'IMAGE', 'webp': 'IMAGE',
         'mp4': 'VIDEO', 'mov': 'VIDEO', 'avi': 'VIDEO', 'mkv': 'VIDEO',
       }[ext] ?? 'FILE';
-      await _sendAttachment(File(path), type);
+      if (!mounted) return;
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: ZippTheme.surface,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => AttachmentPreview(
+          file: File(path),
+          type: type,
+          onSend: _sendAttachment,
+        ),
+      );
     }
   }
 
