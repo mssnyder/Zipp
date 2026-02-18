@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -37,6 +38,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollCtrl = ScrollController();
   ZippMessage? _replyingTo;
   bool _loadingMore = false;
+  bool _isDragging = false;
 
   @override
   void initState() {
@@ -77,7 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
       recipientId: widget.participantId,
       replyToId: _replyingTo?.id,
     );
-    setState(() => _replyingTo = null);
+    if (mounted) setState(() => _replyingTo = null);
     _scrollToBottom();
   }
 
@@ -109,6 +111,19 @@ class _ChatScreenState extends State<ChatScreen> {
           SnackBar(content: Text('Upload failed: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _handleDrop(DropDoneDetails details) async {
+    for (final xFile in details.files) {
+      final path = xFile.path;
+      if (path.isEmpty) continue;
+      final ext = path.split('.').last.toLowerCase();
+      final type = const {
+        'jpg': 'IMAGE', 'jpeg': 'IMAGE', 'png': 'IMAGE', 'gif': 'IMAGE', 'webp': 'IMAGE',
+        'mp4': 'VIDEO', 'mov': 'VIDEO', 'avi': 'VIDEO', 'mkv': 'VIDEO',
+      }[ext] ?? 'FILE';
+      await _sendAttachment(File(path), type);
     }
   }
 
@@ -207,44 +222,82 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: chat.msgLoadingFor(widget.conversationId) && messages.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: messages.length + (_loadingMore ? 1 : 0),
-                    itemBuilder: (ctx, i) {
-                      if (_loadingMore && i == 0) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        );
-                      }
-                      final idx = _loadingMore ? i - 1 : i;
-                      final msg = messages[idx];
-                      final isMine = msg.senderId == myId;
-                      return MessageBubble(
-                        message: msg,
-                        isMine: isMine,
-                        onLongPress: () => _onLongPress(context, msg),
-                        onSwipeReply: () => _onReply(msg),
-                      ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
-                    },
+      body: DropTarget(
+        onDragEntered: (_) => setState(() => _isDragging = true),
+        onDragExited: (_) => setState(() => _isDragging = false),
+        onDragDone: (details) {
+          setState(() => _isDragging = false);
+          _handleDrop(details);
+        },
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: chat.msgLoadingFor(widget.conversationId) && messages.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView.builder(
+                          controller: _scrollCtrl,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: messages.length + (_loadingMore ? 1 : 0),
+                          itemBuilder: (ctx, i) {
+                            if (_loadingMore && i == 0) {
+                              return const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                              );
+                            }
+                            final idx = _loadingMore ? i - 1 : i;
+                            final msg = messages[idx];
+                            final isMine = msg.senderId == myId;
+                            return MessageBubble(
+                              message: msg,
+                              isMine: isMine,
+                              onLongPress: () => _onLongPress(context, msg),
+                              onSwipeReply: () => _onReply(msg),
+                            ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
+                          },
+                        ),
+                ),
+                if (typing.isNotEmpty) const TypingIndicator(),
+                MessageInput(
+                  replyingTo: _replyingTo,
+                  onCancelReply: _cancelReply,
+                  onSend: _sendText,
+                  onSendGif: _sendGif,
+                  onSendAttachment: _sendAttachment,
+                  conversationId: widget.conversationId,
+                ),
+              ],
+            ),
+            if (_isDragging)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: ZippTheme.accent1.withAlpha(30),
+                    border: Border.all(color: ZippTheme.accent1, width: 2),
                   ),
-          ),
-          if (typing.isNotEmpty) const TypingIndicator(),
-          MessageInput(
-            replyingTo: _replyingTo,
-            onCancelReply: _cancelReply,
-            onSend: _sendText,
-            onSendGif: _sendGif,
-            onSendAttachment: _sendAttachment,
-            conversationId: widget.conversationId,
-          ),
-        ],
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.upload_file, size: 56, color: ZippTheme.accent1),
+                        SizedBox(height: 12),
+                        Text(
+                          'Drop files to send',
+                          style: TextStyle(
+                            color: ZippTheme.accent1,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

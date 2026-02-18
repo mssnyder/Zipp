@@ -290,13 +290,22 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  void _handleNewMessage(Map<String, dynamic> payload) async {
+  Future<void> _handleNewMessage(Map<String, dynamic> payload) async {
     final convId = payload['conversationId'] as String?;
     final msgJson = payload['message'] as Map<String, dynamic>?;
     if (convId == null || msgJson == null) return;
 
     final msg = ZippMessage.fromJson(msgJson);
     await decryptMessage(msg);
+
+    // If the conversation isn't in the list yet (e.g. first message from a
+    // new contact), reload the full list so it appears immediately.
+    if (!_conversations.any((c) => c.id == convId)) {
+      try {
+        _conversations = await _api.getConversations();
+      } catch (_) {}
+    }
+
     _appendMessage(convId, msg);
   }
 

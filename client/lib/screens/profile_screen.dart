@@ -175,6 +175,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _linkPollTimer = Timer.periodic(const Duration(seconds: 3), (t) async {
       attempts++;
       if (attempts > 20) { t.cancel(); return; }
+      if (!mounted) { t.cancel(); return; }
       try {
         final api = context.read<ApiService>();
         final auth = context.read<AuthProvider>();

@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/constants.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 
@@ -63,6 +66,23 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         if (mounted) context.go('/');
       } catch (_) {}
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    final uri = Uri.parse('${ZippConfig.serverUrl}/connect/google');
+    if (kIsWeb) {
+      // On web the page navigates away → OAuth → redirects back → app reloads logged in
+      await launchUrl(uri, mode: LaunchMode.platformDefault, webOnlyWindowName: '_self');
+    } else {
+      // On desktop the browser handles it but the app's cookie jar won't receive the cookie
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Google sign-in is fully supported in the web app. On desktop, use email/password.'),
+          duration: Duration(seconds: 5),
+        ));
+      }
     }
   }
 
@@ -222,7 +242,48 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Expanded(child: Divider(color: ZippTheme.border)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text('or', style: TextStyle(color: ZippTheme.textSecondary, fontSize: 13)),
+                        ),
+                        const Expanded(child: Divider(color: ZippTheme.border)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton(
+                        onPressed: _signInWithGoogle,
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: ZippTheme.border),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'G',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF4285F4),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Continue with Google',
+                              style: TextStyle(color: ZippTheme.textPrimary, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => setState(() {
                         _isRegister = !_isRegister;

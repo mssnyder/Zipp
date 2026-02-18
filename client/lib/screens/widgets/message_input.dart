@@ -106,7 +106,7 @@ class _MessageInputState extends State<MessageInput> {
     else _focusNode.requestFocus();
   }
 
-  void _showGifPicker() async {
+  Future<void> _showGifPicker() async {
     final gif = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -131,16 +131,17 @@ class _MessageInputState extends State<MessageInput> {
     if (choice == 'image') {
       final picker = ImagePicker();
       final xf = await picker.pickImage(source: ImageSource.gallery);
-      if (xf != null) await widget.onSendAttachment(File(xf.path), 'IMAGE');
+      if (!mounted || xf == null) return;
+      await widget.onSendAttachment(File(xf.path), 'IMAGE');
     } else if (choice == 'video') {
       final picker = ImagePicker();
       final xf = await picker.pickVideo(source: ImageSource.gallery);
-      if (xf != null) await widget.onSendAttachment(File(xf.path), 'VIDEO');
+      if (!mounted || xf == null) return;
+      await widget.onSendAttachment(File(xf.path), 'VIDEO');
     } else if (choice == 'file') {
       final result = await FilePicker.platform.pickFiles();
-      if (result != null && result.files.single.path != null) {
-        await widget.onSendAttachment(File(result.files.single.path!), 'FILE');
-      }
+      if (!mounted || result == null || result.files.single.path == null) return;
+      await widget.onSendAttachment(File(result.files.single.path!), 'FILE');
     }
   }
 

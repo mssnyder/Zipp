@@ -28,13 +28,19 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     try {
       _user = await _api.getMe();
-      await _ensureKeyPair();
     } on ApiException catch (e) {
       if (e.statusCode == 401) _user = null;
     } catch (_) {
       _user = null;
     } finally {
       _setLoading(false);
+    }
+    // Key upload is best-effort: a failure must not log the user out
+    if (_user != null) {
+      try {
+        await _ensureKeyPair();
+      } catch (_) {}
+      notifyListeners();
     }
   }
 
@@ -43,13 +49,17 @@ class AuthProvider extends ChangeNotifier {
     _setError(null);
     try {
       _user = await _api.login(email: email, password: password);
-      await _ensureKeyPair();
     } on ApiException catch (e) {
       _setError(e.message);
       rethrow;
     } finally {
       _setLoading(false);
     }
+    // Key upload is best-effort: a failure must not invalidate the session
+    try {
+      await _ensureKeyPair();
+    } catch (_) {}
+    notifyListeners();
   }
 
   Future<Map<String, String>> register({

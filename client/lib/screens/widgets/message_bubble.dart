@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import 'reaction_bar.dart';
 
-class MessageBubble extends StatelessWidget {
+class MessageBubble extends StatefulWidget {
   final ZippMessage message;
   final bool isMine;
   final VoidCallback? onLongPress;
@@ -25,71 +26,136 @@ class MessageBubble extends StatelessWidget {
   });
 
   @override
+  State<MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<MessageBubble> {
+  bool _hovering = false;
+
+  // Show hover actions on desktop/web; on mobile long-press handles it.
+  bool get _isDesktop =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPress: onLongPress,
-      child: Dismissible(
-        key: ValueKey('dismiss-${message.id}'),
-        direction: DismissDirection.startToEnd,
-        confirmDismiss: (_) async {
-          onSwipeReply?.call();
-          return false; // Don't actually dismiss
-        },
-        background: Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
+    final message = widget.message;
+    final isMine = widget.isMine;
+
+    final hoverActions = _hovering && _isDesktop
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _HoverBtn(
+                icon: Icons.reply_outlined,
+                tooltip: 'Reply',
+                onTap: widget.onSwipeReply,
+              ),
+              _HoverBtn(
+                icon: Icons.emoji_emotions_outlined,
+                tooltip: 'React',
+                onTap: widget.onLongPress,
+              ),
+            ],
+          )
+        : const SizedBox.shrink();
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onLongPress: widget.onLongPress,
+        child: Dismissible(
+          key: ValueKey('dismiss-${message.id}'),
+          direction: DismissDirection.startToEnd,
+          confirmDismiss: (_) async {
+            widget.onSwipeReply?.call();
+            return false; // Don't actually dismiss
+          },
+          background: Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
+            ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-          child: Align(
-            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.78,
-              ),
-              child: Column(
-                crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                children: [
-                  _BubbleBody(message: message, isMine: isMine),
-                  if (message.reactions.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: ReactionBar(
-                        reactions: message.reactions,
-                        myUserId: context.read<AuthProvider>().user?.id ?? '',
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          DateFormat.jm().format(message.createdAt.toLocal()),
-                          style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
-                        ),
-                        if (isMine) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            message.isRead ? Icons.done_all : Icons.done,
-                            size: 12,
-                            color: message.isRead ? ZippTheme.accent2 : ZippTheme.textSecondary,
-                          ),
-                        ],
-                      ],
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+            child: Row(
+              mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (!isMine) ...[hoverActions, const SizedBox(width: 4)],
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.78,
                   ),
-                ],
-              ),
+                  child: Column(
+                    crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                    children: [
+                      _BubbleBody(message: message, isMine: isMine),
+                      if (message.reactions.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: ReactionBar(
+                            reactions: message.reactions,
+                            myUserId: context.read<AuthProvider>().user?.id ?? '',
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              DateFormat.jm().format(message.createdAt.toLocal()),
+                              style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
+                            ),
+                            if (isMine) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                message.isRead ? Icons.done_all : Icons.done,
+                                size: 12,
+                                color: message.isRead ? ZippTheme.accent2 : ZippTheme.textSecondary,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isMine) ...[const SizedBox(width: 4), hoverActions],
+              ],
             ),
           ),
         ),
       ),
     );
   }
+}
+
+class _HoverBtn extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  const _HoverBtn({required this.icon, required this.tooltip, this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(icon, size: 18, color: ZippTheme.textSecondary),
+          ),
+        ),
+      );
 }
 
 class _BubbleBody extends StatelessWidget {

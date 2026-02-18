@@ -42,9 +42,10 @@ dependencies:
   # Image/GIF display with caching
   cached_network_image: ^3.4.1
 
-  # File/image picking
+  # File/image picking + drag-and-drop (desktop + web)
   image_picker: ^1.1.2
   file_picker: ^8.3.7
+  desktop_drop: ^0.4.4
 
   # Video playback
   video_player: ^2.9.3
