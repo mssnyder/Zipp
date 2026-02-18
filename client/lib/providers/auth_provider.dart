@@ -93,12 +93,13 @@ class AuthProvider extends ChangeNotifier {
     _keyPair = await CryptoService.loadKeyPair();
     if (_keyPair == null) {
       _keyPair = await CryptoService.generateKeyPair();
-      final pubKey = await CryptoService.getPublicKeyBase64(_keyPair!);
-      await _api.uploadPublicKey(pubKey);
-    } else if (_user?.publicKey == null) {
-      // Key exists locally but not on server — upload it
-      final pubKey = await CryptoService.getPublicKeyBase64(_keyPair!);
-      await _api.uploadPublicKey(pubKey);
+    }
+    // Always sync: if the server's stored key doesn't match this device's local
+    // key (e.g. another device logged in and overwrote it), re-upload so that
+    // messages encrypted for THIS device's key can be decrypted here.
+    final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
+    if (_user?.publicKey != localPub) {
+      await _api.uploadPublicKey(localPub);
     }
   }
 

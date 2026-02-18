@@ -13,8 +13,11 @@ model User {
   hashedPassword String?
   displayName    String?
   avatarUrl      String?
-  publicKey      String?
-  isAdmin        Boolean   @default(false)
+  publicKey           String?
+  encryptedPrivateKey String?
+  keySalt             String?
+  keyNonce            String?
+  isAdmin             Boolean   @default(false)
   emailVerified  Boolean   @default(false)
   verifyToken    String?   @unique
   verifyTokenExp DateTime?
