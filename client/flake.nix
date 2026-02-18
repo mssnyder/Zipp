@@ -32,7 +32,14 @@
           flutter
           androidSdk
           jdk17
+          # Compression / System
+          xz
+          zstd
+          zlib
+          libdeflate
           # Linux desktop build deps
+          libxtst
+          libxkbcommon
           gtk3
           pkg-config
           libepoxy
@@ -50,6 +57,7 @@
           libdatrie
           libxdmcp
           # Image/media
+          libwebp
           libpng
           zlib
           libdeflate
