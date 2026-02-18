@@ -1,0 +1,44 @@
+# ── Server ───────────────────────────────────────────────────────────────────
+server/node_modules/
+server/.env
+server/prisma/migrations/dev.db
+server/prisma/*.db
+# Legacy data paths (now at /var/lib/zipp, but ignore if accidentally present)
+server/uploads/
+server/logs/
+
+# Prisma generated client
+server/node_modules/.prisma/
+
+# ── Flutter / Dart ────────────────────────────────────────────────────────────
+client/.dart_tool/
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+client/.packages
+client/build/
+client/pubspec.lock
+
+# Android build artefacts
+client/android/.gradle/
+client/android/local.properties
+client/android/key.properties
+client/android/app/google-services.json
+client/android/app/debug.keystore
+
+# Linux / Windows build
+client/linux/flutter/ephemeral/
+client/windows/flutter/ephemeral/
+
+# IDE
+client/.idea/
+client/*.iml
+.idea/
+*.iml
+
+# ── General ───────────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+*~
+.direnv/
+.env.local

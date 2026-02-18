@@ -1,0 +1,35 @@
+export const RATE_LIMITS = {
+  GLOBAL_MAX: 100,
+  GLOBAL_WINDOW: "1 minute",
+
+  REGISTER_MAX: 5,
+  REGISTER_WINDOW: "1 minute",
+  LOGIN_MAX: 10,
+  LOGIN_WINDOW: "1 minute",
+
+  PROFILE_UPDATE_MAX: 5,
+  PROFILE_UPDATE_WINDOW: "5 minutes",
+  OAUTH_COMPLETE_MAX: 3,
+  OAUTH_COMPLETE_WINDOW: "5 minutes",
+
+  VERIFY_RESEND_MAX: 3,
+  VERIFY_RESEND_WINDOW: "10 minutes",
+
+  MESSAGE_MAX: 30,
+  MESSAGE_WINDOW: "1 minute",
+
+  REACTION_MAX: 60,
+  REACTION_WINDOW: "1 minute",
+};
+
+export const SESSION = {
+  COOKIE_NAME: "sid",
+};
+
+export const PAGINATION = {
+  MESSAGES_PER_PAGE: 50,
+  CONVERSATIONS_PER_PAGE: 30,
+  USERS_PER_PAGE: 20,
+};
+
+export const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours

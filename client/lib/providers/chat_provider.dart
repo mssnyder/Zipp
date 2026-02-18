@@ -1,0 +1,333 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:cryptography/cryptography.dart';
+import '../models/conversation.dart';
+import '../models/message.dart';
+import '../models/reaction.dart';
+import '../services/api_service.dart';
+import '../services/crypto_service.dart';
+import '../services/websocket_service.dart';
+
+class ChatProvider extends ChangeNotifier {
+  final ApiService _api;
+  final WebSocketService _ws;
+
+  // Key pair set by AuthProvider after login
+  SimpleKeyPair? keyPair;
+
+  // Public key cache: userId -> base64 pubkey
+  final Map<String, String> _pubKeyCache = {};
+
+  // Conversations
+  List<Conversation> _conversations = [];
+  bool _convsLoading = false;
+
+  // Messages per conversation
+  final Map<String, List<ZippMessage>> _messages = {};
+  final Map<String, bool> _hasMore = {};   // can load older messages
+  final Map<String, bool> _msgLoading = {};
+
+  // Typing indicators: conversationId -> Set<userId>
+  final Map<String, Set<String>> _typing = {};
+
+  // Online users
+  final Set<String> _online = {};
+
+  ChatProvider(this._api, this._ws) {
+    _ws.addListener(_onWsEvent);
+  }
+
+  List<Conversation> get conversations => _conversations;
+  bool get convsLoading => _convsLoading;
+
+  List<ZippMessage> messagesFor(String convId) => _messages[convId] ?? [];
+  bool hasMoreFor(String convId) => _hasMore[convId] ?? true;
+  bool msgLoadingFor(String convId) => _msgLoading[convId] ?? false;
+  Set<String> typingIn(String convId) => _typing[convId] ?? {};
+  bool isOnline(String userId) => _online.contains(userId);
+
+  // ── Conversations ─────────────────────────────────────────────────────────
+
+  Future<void> loadConversations() async {
+    _convsLoading = true;
+    notifyListeners();
+    try {
+      _conversations = await _api.getConversations();
+    } finally {
+      _convsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Conversation> getOrCreateConversation(String userId) async {
+    final conv = await _api.getOrCreateConversation(userId);
+    if (!_conversations.any((c) => c.id == conv.id)) {
+      _conversations.insert(0, conv);
+      notifyListeners();
+    }
+    return conv;
+  }
+
+  // ── Messages ──────────────────────────────────────────────────────────────
+
+  Future<void> loadMessages(String convId) async {
+    if (_msgLoading[convId] == true) return;
+    _msgLoading[convId] = true;
+    notifyListeners();
+
+    try {
+      final msgs = await _api.getMessages(convId);
+      _messages[convId] = msgs;
+      _hasMore[convId] = msgs.length >= 50;
+      await _decryptAll(msgs);
+    } finally {
+      _msgLoading[convId] = false;
+      notifyListeners();
+    }
+  }
+
+  /// Load older messages (scroll-up pagination).
+  Future<void> loadMoreMessages(String convId) async {
+    if (_msgLoading[convId] == true || _hasMore[convId] == false) return;
+    final existing = _messages[convId];
+    if (existing == null || existing.isEmpty) return;
+
+    _msgLoading[convId] = true;
+    notifyListeners();
+
+    try {
+      final oldest = existing.first.createdAt.toIso8601String();
+      final older = await _api.getMessages(convId, before: oldest);
+      if (older.isEmpty) {
+        _hasMore[convId] = false;
+      } else {
+        await _decryptAll(older);
+        _messages[convId] = [...older, ...existing];
+        _hasMore[convId] = older.length >= 50;
+      }
+    } finally {
+      _msgLoading[convId] = false;
+      notifyListeners();
+    }
+  }
+
+  Future<ZippMessage?> sendTextMessage({
+    required String conversationId,
+    required String text,
+    required String recipientId,
+    String? replyToId,
+  }) async {
+    final recipientKey = await _getPublicKey(recipientId);
+    if (recipientKey == null || keyPair == null) return null;
+
+    final enc = await CryptoService.encrypt(text, keyPair!, recipientKey);
+    final msg = await _api.sendMessage(
+      conversationId: conversationId,
+      ciphertext: enc.ciphertext,
+      nonce: enc.nonce,
+      type: 'TEXT',
+      replyToId: replyToId,
+    );
+    msg.plaintext = text;
+    _appendMessage(conversationId, msg);
+    return msg;
+  }
+
+  Future<ZippMessage?> sendGifMessage({
+    required String conversationId,
+    required Map<String, dynamic> tenorResult,
+    required String recipientId,
+  }) async {
+    final recipientKey = await _getPublicKey(recipientId);
+    if (recipientKey == null || keyPair == null) return null;
+
+    final payload = jsonEncode({
+      'gifUrl': tenorResult['media_formats']?['gif']?['url'] ?? '',
+      'tinyUrl': tenorResult['media_formats']?['tinygif']?['url'] ?? '',
+      'title': tenorResult['title'] ?? '',
+    });
+    final enc = await CryptoService.encrypt(payload, keyPair!, recipientKey);
+    final msg = await _api.sendMessage(
+      conversationId: conversationId,
+      ciphertext: enc.ciphertext,
+      nonce: enc.nonce,
+      type: 'GIF',
+    );
+    msg.plaintext = payload;
+    _appendMessage(conversationId, msg);
+    return msg;
+  }
+
+  Future<ZippMessage?> sendAttachmentMessage({
+    required String conversationId,
+    required Map<String, dynamic> attachment,
+    required String recipientId,
+    required String type, // IMAGE | VIDEO | FILE
+  }) async {
+    final recipientKey = await _getPublicKey(recipientId);
+    if (recipientKey == null || keyPair == null) return null;
+
+    final payload = jsonEncode(attachment);
+    final enc = await CryptoService.encrypt(payload, keyPair!, recipientKey);
+    final msg = await _api.sendMessage(
+      conversationId: conversationId,
+      ciphertext: enc.ciphertext,
+      nonce: enc.nonce,
+      type: type,
+    );
+    msg.plaintext = payload;
+    _appendMessage(conversationId, msg);
+    return msg;
+  }
+
+  void _appendMessage(String convId, ZippMessage msg) {
+    _messages.putIfAbsent(convId, () => []).add(msg);
+    _bumpConversation(convId);
+    notifyListeners();
+  }
+
+  void _bumpConversation(String convId) {
+    final idx = _conversations.indexWhere((c) => c.id == convId);
+    if (idx > 0) {
+      final conv = _conversations.removeAt(idx);
+      _conversations.insert(0, conv);
+    }
+  }
+
+  // ── Reactions ─────────────────────────────────────────────────────────────
+
+  Future<void> toggleReaction(String messageId, String convId, String emoji) async {
+    final reactions = await _api.toggleReaction(messageId, emoji);
+    _updateReactions(convId, messageId, reactions);
+  }
+
+  void _updateReactions(String convId, String messageId, List<Reaction> reactions) {
+    final msgs = _messages[convId];
+    if (msgs == null) return;
+    final idx = msgs.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    msgs[idx] = msgs[idx].copyWith(reactions: reactions);
+    notifyListeners();
+  }
+
+  // ── Decryption ────────────────────────────────────────────────────────────
+
+  Future<void> _decryptAll(List<ZippMessage> msgs) async {
+    if (keyPair == null) return;
+    for (final msg in msgs) {
+      if (msg.plaintext != null) continue;
+      final senderKey = await _getPublicKey(msg.senderId);
+      if (senderKey == null) continue;
+      msg.plaintext = await CryptoService.decrypt(
+        msg.ciphertext,
+        msg.nonce,
+        keyPair!,
+        senderKey,
+      );
+    }
+  }
+
+  Future<String?> decryptMessage(ZippMessage msg) async {
+    if (msg.plaintext != null) return msg.plaintext;
+    if (keyPair == null) return null;
+    final senderKey = await _getPublicKey(msg.senderId);
+    if (senderKey == null) return null;
+    final plain = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
+    msg.plaintext = plain;
+    return plain;
+  }
+
+  Future<String?> _getPublicKey(String userId) async {
+    if (_pubKeyCache.containsKey(userId)) return _pubKeyCache[userId];
+    final key = await _api.fetchPublicKey(userId);
+    if (key != null) _pubKeyCache[userId] = key;
+    return key;
+  }
+
+  // ── WebSocket events ──────────────────────────────────────────────────────
+
+  void _onWsEvent(String event, Map<String, dynamic> payload) {
+    switch (event) {
+      case 'message:new':
+        _handleNewMessage(payload);
+      case 'message:reaction':
+        _handleReaction(payload);
+      case 'message:typing':
+        _handleTyping(payload);
+      case 'message:read':
+        _handleRead(payload);
+      case 'user:online':
+        _online.add(payload['userId'] as String? ?? '');
+        notifyListeners();
+      case 'user:offline':
+        _online.remove(payload['userId'] as String? ?? '');
+        notifyListeners();
+    }
+  }
+
+  void _handleNewMessage(Map<String, dynamic> payload) async {
+    final convId = payload['conversationId'] as String?;
+    final msgJson = payload['message'] as Map<String, dynamic>?;
+    if (convId == null || msgJson == null) return;
+
+    final msg = ZippMessage.fromJson(msgJson);
+    await decryptMessage(msg);
+    _appendMessage(convId, msg);
+  }
+
+  void _handleReaction(Map<String, dynamic> payload) {
+    final messageId = payload['messageId'] as String?;
+    final reactionsJson = payload['reactions'] as List<dynamic>?;
+    if (messageId == null || reactionsJson == null) return;
+
+    final reactions = reactionsJson
+        .map((r) => Reaction.fromJson(r as Map<String, dynamic>))
+        .toList();
+
+    for (final entry in _messages.entries) {
+      final idx = entry.value.indexWhere((m) => m.id == messageId);
+      if (idx >= 0) {
+        entry.value[idx] = entry.value[idx].copyWith(reactions: reactions);
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  void _handleTyping(Map<String, dynamic> payload) {
+    final convId = payload['conversationId'] as String?;
+    final userId = payload['userId'] as String?;
+    final isTyping = payload['isTyping'] as bool? ?? false;
+    if (convId == null || userId == null) return;
+
+    _typing.putIfAbsent(convId, () => {});
+    if (isTyping) {
+      _typing[convId]!.add(userId);
+    } else {
+      _typing[convId]!.remove(userId);
+    }
+    notifyListeners();
+  }
+
+  void _handleRead(Map<String, dynamic> payload) {
+    final convId = payload['conversationId'] as String?;
+    final msgId = payload['messageId'] as String?;
+    final readAt = payload['readAt'] as String?;
+    if (convId == null || msgId == null) return;
+
+    final msgs = _messages[convId];
+    if (msgs == null) return;
+    final idx = msgs.indexWhere((m) => m.id == msgId);
+    if (idx >= 0) {
+      msgs[idx] = msgs[idx].copyWith(readAt: readAt != null ? DateTime.parse(readAt) : null);
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ws.removeListener(_onWsEvent);
+    super.dispose();
+  }
+}

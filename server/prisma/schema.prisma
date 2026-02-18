@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  username       String    @unique
+  hashedPassword String?
+  displayName    String?
+  avatarUrl      String?
+  publicKey      String?
+  isAdmin        Boolean   @default(false)
+  emailVerified  Boolean   @default(false)
+  verifyToken    String?   @unique
+  verifyTokenExp DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  accounts     Account[]
+  sessions     Session[]
+  sentMessages Message[]                @relation("sender")
+  reactions    Reaction[]
+  participants ConversationParticipant[]
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  provider          String
+  providerAccountId String
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id         String   @id
+  userId     String?
+  data       Json
+  ip         String?
+  userAgent  String?
+  device     String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+}
+
+model ConversationParticipant {
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  senderId       String
+  ciphertext     String
+  nonce          String
+  type           MessageType @default(TEXT)
+  replyToId      String?
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("sender", fields: [senderId], references: [id])
+  replyTo      Message?     @relation("replies", fields: [replyToId], references: [id])
+  replies      Message[]    @relation("replies")
+  reactions    Reaction[]
+
+  @@index([conversationId, createdAt])
+}
+
+enum MessageType {
+  TEXT
+  GIF
+  IMAGE
+  VIDEO
+  FILE
+}
+
+// Tracks uploaded attachment files (referenced by URL in encrypted message payload)
+model Attachment {
+  id         String   @id @default(cuid())
+  uploaderId String
+  url        String   // /uploads/attachments/<filename>
+  thumbUrl   String?  // /uploads/thumbs/<filename> — for images & video posters
+  mimeType   String
+  sizeBytes  Int
+  duration   Int?     // video duration in seconds
+  createdAt  DateTime @default(now())
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+}

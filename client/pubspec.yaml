@@ -1,0 +1,66 @@
+name: zipp
+description: "Zipp — private E2E encrypted messaging"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  provider: ^6.1.5
+
+  # Networking
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.3
+  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.1.1
+
+  # E2E encryption (pure Dart)
+  cryptography: ^2.7.0
+
+  # Secure private key storage
+  flutter_secure_storage: ^9.2.4
+
+  # Navigation
+  go_router: ^14.6.3
+
+  # Animations
+  flutter_animate: ^4.5.0
+
+  # Emoji picker
+  emoji_picker_flutter: ^3.1.0
+
+  # Image/GIF display with caching
+  cached_network_image: ^3.4.1
+
+  # File/image picking
+  image_picker: ^1.1.2
+  file_picker: ^8.3.7
+
+  # Video playback
+  video_player: ^2.9.3
+  chewie: ^1.8.5
+
+  # Date/time formatting
+  intl: ^0.20.2
+
+  # Local preferences (theme, onboarding)
+  shared_preferences: ^2.3.4
+
+  # Jump to replied message in list
+  scrollable_positioned_list: ^0.3.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
