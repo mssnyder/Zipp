@@ -300,6 +300,12 @@ class ChatProvider extends ChangeNotifier {
         _handleTyping(payload);
       case 'message:read':
         _handleRead(payload);
+      case 'presence:list':
+        final userIds = (payload['userIds'] as List<dynamic>?)
+            ?.map((id) => id as String)
+            .toList() ?? [];
+        _online.addAll(userIds);
+        notifyListeners();
       case 'user:online':
         _online.add(payload['userId'] as String? ?? '');
         notifyListeners();

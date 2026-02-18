@@ -96,7 +96,15 @@ const setSessionCookie = (reply, sid, extra = {}) => {
 };
 
 const clearSessionCookie = (reply) => {
-  reply.clearCookie(SESSION.COOKIE_NAME, { path: "/" });
+  // Use setCookie with maxAge=0 to reliably clear the cookie across all browsers.
+  // Fastify's clearCookie sometimes fails when cookie attributes don't match exactly.
+  reply.setCookie(SESSION.COOKIE_NAME, "", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+  });
 };
 
 const sessionPlugin = fp((app) => {

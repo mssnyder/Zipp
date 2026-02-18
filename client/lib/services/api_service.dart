@@ -20,6 +20,7 @@ class ApiException implements Exception {
 
 class ApiService {
   late final Dio _dio;
+  CookieJar? _cookieJar;
 
   ApiService._();
 
@@ -42,11 +43,17 @@ class ApiService {
       final jar = PersistCookieJar(
         storage: FileStorage('${dir.path}/.cookies/'),
       );
+      svc._cookieJar = jar;
       svc._dio = Dio(options);
       svc._dio.interceptors.add(CookieManager(jar));
     }
 
     return svc;
+  }
+
+  /// Clear all persisted cookies (used on logout for native platforms).
+  Future<void> clearCookies() async {
+    await _cookieJar?.deleteAll();
   }
 
   Future<Map<String, dynamic>> _check(Response r) async {
@@ -82,7 +89,7 @@ class ApiService {
   }
 
   Future<void> logout() async {
-    await _dio.post('/api/auth/logout');
+    await _dio.post('/api/auth/logout', data: {});
   }
 
   Future<void> resendVerification(String email) async {

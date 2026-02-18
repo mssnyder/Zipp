@@ -62,7 +62,7 @@ class ConversationTile extends StatelessWidget {
       title: Text(name, style: Theme.of(context).textTheme.titleMedium),
       subtitle: conversation.lastMessage != null
           ? Text(
-              _previewText(conversation.lastMessage!.type),
+              _previewText(conversation.lastMessage!, chat),
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -82,13 +82,23 @@ class ConversationTile extends StatelessWidget {
     );
   }
 
-  String _previewText(String type) => switch (type) {
-        'GIF' => '🎞️ GIF',
-        'IMAGE' => '🖼️ Image',
-        'VIDEO' => '🎬 Video',
-        'FILE' => '📎 File',
-        _ => '🔒 Encrypted message',
-      };
+  String _previewText(LastMessagePreview lastMsg, ChatProvider chat) {
+    // For non-text types, show a generic label
+    switch (lastMsg.type) {
+      case 'GIF': return '🎞️ GIF';
+      case 'IMAGE': return '🖼️ Image';
+      case 'VIDEO': return '🎬 Video';
+      case 'FILE': return '📎 File';
+    }
+    // For TEXT, try to find the decrypted message from the provider's cache
+    final messages = chat.messagesFor(conversation.id);
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].id == lastMsg.id && messages[i].plaintext != null) {
+        return messages[i].plaintext!;
+      }
+    }
+    return '🔒 Encrypted message';
+  }
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();

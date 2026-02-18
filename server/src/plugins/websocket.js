@@ -49,6 +49,12 @@ export default fp(async (app) => {
     if (!clients.has(userId)) clients.set(userId, new Set());
     clients.get(userId).add(socket);
 
+    // Send current online user list to the newly connected client
+    const onlineList = [...clients.keys()].filter((id) => id !== userId);
+    if (onlineList.length > 0) {
+      socket.send(JSON.stringify({ event: "presence:list", payload: { userIds: onlineList } }));
+    }
+
     // Notify others this user came online
     broadcast([...clients.keys()].filter((id) => id !== userId), "user:online", { userId });
 

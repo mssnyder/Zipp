@@ -91,6 +91,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     await _api.logout();
+    await _api.clearCookies();
     _user = null;
     _keyPair = null;
     _loginPassword = null;
@@ -100,31 +101,48 @@ class AuthProvider extends ChangeNotifier {
 
   /// Core key management logic.
   ///
-  /// 1. Try loading local key from secure storage.
-  /// 2. If no local key AND password available AND server has encrypted backup:
-  ///    download + decrypt backup, store locally.
-  /// 3. If still no local key: generate a new key pair.
-  /// 4. If local public key differs from server's: upload public key.
-  ///    If password available, also encrypt + upload private key backup.
+  /// Always fetches key data from the server (the login response doesn't
+  /// include key fields). Uses server key data to decide whether to restore
+  /// from backup, generate new, or sync.
   Future<void> _ensureKeyPair() async {
+    if (_user == null) return;
+
     // Step 1: try local key
     _keyPair = await CryptoService.loadKeyPair();
 
-    // Step 2: try restoring from server backup (only if we have a password)
-    if (_keyPair == null && _loginPassword != null && _user != null) {
-      _keyPair = await _tryRestoreFromBackup(_loginPassword!);
+    // Step 2: fetch server key data
+    final serverKeys = await _api.fetchOwnKeys(_user!.id);
+    final serverPubKey = serverKeys['publicKey'];
+    final serverEncPriv = serverKeys['encryptedPrivateKey'];
+    final serverSalt = serverKeys['keySalt'];
+    final serverNonce = serverKeys['keyNonce'];
+    final hasServerBackup = serverEncPriv != null && serverSalt != null && serverNonce != null;
+
+    // Step 3: try restoring from server backup (only if we have a password)
+    if (_keyPair == null && _loginPassword != null && hasServerBackup) {
+      final privBytes = await CryptoService.decryptPrivateKey(
+        serverEncPriv, serverSalt, serverNonce, _loginPassword!,
+      );
+      if (privBytes != null) {
+        await StorageService.setPrivateKey(base64Url.encode(privBytes));
+        _keyPair = await CryptoService.loadKeyPair();
+      }
     }
 
-    // Step 3: generate new key pair if still no key
+    // Step 4: generate new key pair only if no backup exists on the server.
+    // If a backup exists but we can't decrypt it (no password), leave keyPair
+    // null — don't overwrite the server key.
     if (_keyPair == null) {
+      if (hasServerBackup && _loginPassword == null) {
+        return;
+      }
       _keyPair = await CryptoService.generateKeyPair();
     }
 
-    // Step 4: sync with server
+    // Step 5: sync with server
     final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
-    if (_user?.publicKey != localPub) {
+    if (serverPubKey != localPub) {
       if (_loginPassword != null) {
-        // Encrypt and upload both public key and private key backup
         final privBytes = await _keyPair!.extractPrivateKeyBytes();
         final backup = await CryptoService.encryptPrivateKey(privBytes, _loginPassword!);
         await _api.uploadPublicKey(
@@ -136,7 +154,7 @@ class AuthProvider extends ChangeNotifier {
       } else {
         await _api.uploadPublicKey(localPub);
       }
-    } else if (_loginPassword != null && _user?.encryptedPrivateKey == null) {
+    } else if (_loginPassword != null && !hasServerBackup) {
       // Key matches server but no backup exists yet — upload backup
       final privBytes = await _keyPair!.extractPrivateKeyBytes();
       final backup = await CryptoService.encryptPrivateKey(privBytes, _loginPassword!);
@@ -149,40 +167,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Try to download and decrypt the private key backup from the server.
-  Future<SimpleKeyPair?> _tryRestoreFromBackup(String password) async {
-    if (_user == null) return null;
-    try {
-      final keys = await _api.fetchOwnKeys(_user!.id);
-      final enc = keys['encryptedPrivateKey'];
-      final salt = keys['keySalt'];
-      final nonce = keys['keyNonce'];
-      if (enc == null || salt == null || nonce == null) return null;
-
-      final privBytes = await CryptoService.decryptPrivateKey(enc, salt, nonce, password);
-      if (privBytes == null) return null;
-
-      // Store locally and load as key pair
-      await StorageService.setPrivateKey(base64Url.encode(privBytes));
-      return await CryptoService.loadKeyPair();
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Manual restore for settings UI — user enters password to restore key from backup.
   Future<bool> restoreKeyFromBackup(String password) async {
     if (_user == null) return false;
     try {
-      final kp = await _tryRestoreFromBackup(password);
-      if (kp == null) return false;
-      _keyPair = kp;
+      final serverKeys = await _api.fetchOwnKeys(_user!.id);
+      final enc = serverKeys['encryptedPrivateKey'];
+      final salt = serverKeys['keySalt'];
+      final nonce = serverKeys['keyNonce'];
+      if (enc == null || salt == null || nonce == null) return false;
+
+      final privBytes = await CryptoService.decryptPrivateKey(enc, salt, nonce, password);
+      if (privBytes == null) return false;
+
+      await StorageService.setPrivateKey(base64Url.encode(privBytes));
+      _keyPair = await CryptoService.loadKeyPair();
+      if (_keyPair == null) return false;
 
       // Sync public key with server if needed
       final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
-      if (_user?.publicKey != localPub) {
-        final privBytes = await _keyPair!.extractPrivateKeyBytes();
-        final backup = await CryptoService.encryptPrivateKey(privBytes, password);
+      final serverPub = serverKeys['publicKey'];
+      if (serverPub != localPub) {
+        final privB = await _keyPair!.extractPrivateKeyBytes();
+        final backup = await CryptoService.encryptPrivateKey(privB, password);
         await _api.uploadPublicKey(
           localPub,
           encryptedPrivateKey: backup.encryptedPrivateKey,
