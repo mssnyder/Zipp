@@ -44,9 +44,16 @@
           libsepol
           # flutter_secure_storage_linux
           libsecret
+          libgcrypt
+          libgpg-error
+          libthai
+          libdatrie
+          libxdmcp
           # Image/media
           libpng
           zlib
+          libdeflate
+          lerc
         ];
 
         shellHook = ''
@@ -58,6 +65,10 @@
           # Flutter config
           export FLUTTER_ROOT="${pkgs.flutter}"
           export PUB_CACHE="$HOME/.pub-cache"
+
+          # Suppress benign GTK/ATK noise
+          export NO_AT_BRIDGE=1      # Don't try to connect to AT-SPI2 accessibility bus
+          export GTK_USE_PORTAL=0    # Don't query xdg-desktop-portal for theme settings
 
           echo "Zipp Flutter dev shell"
           echo "  flutter --version"
