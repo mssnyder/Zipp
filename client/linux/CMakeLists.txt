@@ -74,6 +74,13 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# flutter_secure_storage_linux bundles an old nlohmann/json that uses deprecated
+# literal operator syntax (e.g. operator "" _json). Suppress it for that target only.
+if(TARGET flutter_secure_storage_linux_plugin)
+  target_compile_options(flutter_secure_storage_linux_plugin PRIVATE
+    -Wno-deprecated-literal-operator)
+endif()
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build

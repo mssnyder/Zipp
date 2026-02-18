@@ -36,6 +36,11 @@
           gtk3
           pkg-config
           libepoxy
+          glib
+          libsysprof-capture
+          pcre2
+          # flutter_secure_storage_linux
+          libsecret
           # Image/media
           libpng
           zlib

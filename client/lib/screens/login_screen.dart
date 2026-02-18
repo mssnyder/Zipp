@@ -58,8 +58,8 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       try {
         await auth.login(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text,
+          _emailCtrl.text.trim(),
+          _passwordCtrl.text,
         );
         if (mounted) context.go('/');
       } catch (_) {}

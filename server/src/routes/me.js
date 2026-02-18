@@ -95,7 +95,7 @@ export default async (app, prisma) => {
 
     const ext = data.mimetype.split("/")[1];
     const filename = `${req.auth.user.id}-${randomBytes(6).toString("hex")}.${ext}`;
-    const uploadDir = "./uploads/avatars";
+    const uploadDir = join(process.env.DATA_DIR ?? process.cwd(), "uploads", "avatars");
     await mkdir(uploadDir, { recursive: true });
     const buf = await data.toBuffer();
     await writeFile(join(uploadDir, filename), buf);
