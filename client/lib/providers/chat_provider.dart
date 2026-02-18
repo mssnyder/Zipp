@@ -96,16 +96,26 @@ class ChatProvider extends ChangeNotifier {
   // ── Messages ──────────────────────────────────────────────────────────────
 
   Future<void> loadMessages(String convId) async {
-    if (_msgLoading[convId] == true) return;
+    if (_msgLoading[convId] == true) {
+      print('[ChatProvider] Already loading messages for $convId');
+      return;
+    }
     _msgLoading[convId] = true;
+    print('[ChatProvider] Starting to load messages for $convId');
     notifyListeners();
 
     try {
+      print('[ChatProvider] Fetching messages from API...');
       final msgs = await _api.getMessages(convId);
+      print('[ChatProvider] Fetched ${msgs.length} messages');
       _messages[convId] = msgs;
       _hasMore[convId] = msgs.length >= 50;
+      print('[ChatProvider] Starting decryption for ${msgs.length} messages...');
       // Decrypt all messages (will retry if keyPair not available yet)
       await _decryptAllWithRetry(msgs);
+      print('[ChatProvider] Decryption complete for $convId');
+    } catch (e) {
+      print('[ChatProvider] ERROR loading messages for $convId: $e');
     } finally {
       _msgLoading[convId] = false;
       notifyListeners();
@@ -127,6 +137,7 @@ class ChatProvider extends ChangeNotifier {
       if (older.isEmpty) {
         _hasMore[convId] = false;
       } else {
+        print('[ChatProvider] Loading ${older.length} older messages');
         await _decryptAllWithRetry(older);
         _messages[convId] = [...older, ...existing];
         _hasMore[convId] = older.length >= 50;
@@ -267,29 +278,65 @@ class ChatProvider extends ChangeNotifier {
   
   // Decrypt with retry - keeps trying until message is decrypted
   Future<void> _decryptAllWithRetry(List<ZippMessage> msgs) async {
+    print('[ChatProvider] _decryptAllWithRetry called with ${msgs.length} messages');
+    print('[ChatProvider] Current keyPair: ${keyPair != null ? "present" : "null"}');
+    
     // Poll until all messages are decrypted or keyPair becomes unavailable
+    int attempt = 0;
+    const maxAttempts = 1000; // Safety limit
+    
     while (keyPair != null) {
+      attempt++;
+      if (attempt > maxAttempts) {
+        print('[ChatProvider] Stopping retry loop after $maxAttempts attempts');
+        break;
+      }
+      
       bool allDecrypted = true;
+      int decryptedCount = 0;
+      
       for (final msg in msgs) {
         if (msg.plaintext == null) {
           final senderKey = await _getPublicKey(msg.senderId);
+          print('[ChatProvider] [Attempt $attempt] Decrypting message from ${msg.senderId}');
           if (senderKey != null) {
             msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
           }
-          allDecrypted = false;
+          if (msg.plaintext == null) {
+            print('[ChatProvider] [Attempt $attempt] FAILED to decrypt message from ${msg.senderId}');
+            allDecrypted = false;
+          } else {
+            print('[ChatProvider] [Attempt $attempt] Successfully decrypted message from ${msg.senderId}');
+            decryptedCount++;
+          }
+        } else {
+          decryptedCount++;
         }
       }
+      
+      print('[ChatProvider] [Attempt $attempt] Decrypted $decryptedCount/$msgs.length messages');
+      
       // If all decrypted or keyPair is now null, break
-      if (allDecrypted || keyPair == null) break;
+      if (allDecrypted || keyPair == null) {
+        print('[ChatProvider] Decryption complete: $allDecrypted, keyPair: ${keyPair != null}');
+        break;
+      }
       // Small delay before retry to avoid tight loop
       await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
   Future<String?> _getPublicKey(String userId) async {
-    if (_pubKeyCache.containsKey(userId)) return _pubKeyCache[userId];
+    if (_pubKeyCache.containsKey(userId)) {
+      print('[ChatProvider] Using cached public key for $userId');
+      return _pubKeyCache[userId];
+    }
+    print('[ChatProvider] Fetching public key for $userId from API...');
     final key = await _api.fetchPublicKey(userId);
-    if (key != null) _pubKeyCache[userId] = key;
+    if (key != null) {
+      _pubKeyCache[userId] = key;
+      print('[ChatProvider] Cached public key for $userId');
+    }
     return key;
   }
 
@@ -319,12 +366,18 @@ class ChatProvider extends ChangeNotifier {
     final msgJson = payload['message'] as Map<String, dynamic>?;
     if (convId == null || msgJson == null) return;
 
+    print('[ChatProvider] Received new message for $convId');
+
     final msg = ZippMessage.fromJson(msgJson);
     // Decrypt immediately when received via WebSocket
     if (keyPair != null) {
       final senderKey = await _getPublicKey(msg.senderId);
+      print('[ChatProvider] Decrypting WebSocket message from ${msg.senderId}');
       if (senderKey != null) {
         msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
+        print('[ChatProvider] Successfully decrypted WebSocket message from ${msg.senderId}');
+      } else {
+        print('[ChatProvider] FAILED to get public key for ${msg.senderId}');
       }
     }
     await _decryptAllWithRetry([msg]);

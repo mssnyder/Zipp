@@ -80,19 +80,32 @@ class CryptoService {
     String senderPublicKeyBase64,
   ) async {
     try {
+      print('[CryptoService] Attempting decryption...');
+      print('[CryptoService] Sender public key: ${senderPublicKeyBase64.substring(0, 20)}...');
+      print('[CryptoService] Message length: ${ciphertextB64.length} chars, nonce: ${nonceB64.length} chars');
+      
       final senderPub = SimplePublicKey(
         base64Url.decode(senderPublicKeyBase64),
         type: KeyPairType.x25519,
       );
       final aesKey = await _deriveKey(myKp, senderPub);
+      print('[CryptoService] Derived AES key successfully');
+      
       final raw = base64Url.decode(ciphertextB64);
+      print('[CryptoService] Decoded ciphertext length: ${raw.length} bytes');
+      
       final mac = Mac(raw.sublist(raw.length - 16));
       final cipherBytes = raw.sublist(0, raw.length - 16);
       final nonce = base64Url.decode(nonceB64);
+      print('[CryptoService] Decoded nonce length: ${nonce.length} bytes');
+      
       final secretBox = SecretBox(cipherBytes, nonce: nonce, mac: mac);
       final plain = await _aesGcm.decrypt(secretBox, secretKey: aesKey);
+      print('[CryptoService] Decryption successful! Plaintext length: ${plain.length} bytes');
+      print('[CryptoService] Plaintext preview: ${utf8.decode(plain).substring(0, 50)}...');
       return utf8.decode(plain);
-    } catch (_) {
+    } catch (e) {
+      print('[CryptoService] Decryption FAILED: $e');
       return null;
     }
   }
