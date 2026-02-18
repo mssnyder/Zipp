@@ -74,7 +74,7 @@ export default (app, prisma) => {
           reply.code(400).send({ error: err.errors.join(", ") });
           return null;
         });
-      if (!body) return;
+      if (!body) return reply;
 
       const { email, username, password, displayName } = body;
 
@@ -178,7 +178,7 @@ export default (app, prisma) => {
           reply.code(400).send({ error: err.errors.join(", ") });
           return null;
         });
-      if (!body) return;
+      if (!body) return reply;
 
       const { email, password } = body;
       const user = await prisma.user.findUnique({
@@ -259,7 +259,7 @@ export default (app, prisma) => {
     return reply.redirect(process.env.FRONTEND_URL);
   }
 
-  async function handleGoogleLink({ sub, firstName, lastName }, req, reply) {
+  async function handleGoogleLink({ sub }, req, reply) {
     // Support both old grant.dynamic.link flow and new linkUserId token flow (from desktop)
     const userId = req.auth.user?.id ?? req.session.linkUserId;
     if (!userId) {
@@ -298,7 +298,7 @@ export default (app, prisma) => {
           reply.code(400).send({ error: err.errors.join(", ") });
           return null;
         });
-      if (!body) return;
+      if (!body) return reply;
 
       const { username, displayName } = body;
       const { provider, providerAccountId, email, firstName, lastName } = pending;

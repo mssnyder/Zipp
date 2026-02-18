@@ -23,7 +23,7 @@ function formatConversation(conv, myUserId) {
 export default async (app, prisma) => {
   // GET /api/conversations — list my conversations
   app.get("/api/conversations", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const conversations = await prisma.conversation.findMany({
       where: { participants: { some: { userId: req.auth.user.id } } },
@@ -40,7 +40,7 @@ export default async (app, prisma) => {
 
   // POST /api/conversations — create or find existing DM
   app.post("/api/conversations", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const { userId } = req.body || {};
     if (!userId || typeof userId !== "string") {

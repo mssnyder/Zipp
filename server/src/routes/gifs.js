@@ -10,7 +10,7 @@ function ensureAuth(req, reply) {
 export default async (app) => {
   // GET /api/gifs/search?q=<query>&limit=20
   app.get("/api/gifs/search", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const apiKey = process.env.KLIPY_API_KEY;
     if (!apiKey) return reply.code(503).send({ error: "GIF search not configured" });
@@ -32,7 +32,7 @@ export default async (app) => {
 
   // GET /api/gifs/trending
   app.get("/api/gifs/trending", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const apiKey = process.env.KLIPY_API_KEY;
     if (!apiKey) return reply.code(503).send({ error: "GIF search not configured" });

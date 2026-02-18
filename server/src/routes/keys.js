@@ -7,7 +7,7 @@ function ensureAuth(req, reply) {
 export default async (app, prisma) => {
   // GET /api/keys/:userId — fetch a user's public key
   app.get("/api/keys/:userId", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const user = await prisma.user.findUnique({
       where: { id: req.params.userId },
@@ -19,7 +19,7 @@ export default async (app, prisma) => {
 
   // PUT /api/keys — upload or rotate caller's public key
   app.put("/api/keys", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const { publicKey } = req.body || {};
     if (!publicKey || typeof publicKey !== "string") {

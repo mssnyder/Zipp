@@ -106,7 +106,7 @@ export default async (app, prisma) => {
 
   // POST /api/upload — upload image, video, or file attachment
   app.post("/api/upload", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const data = await req.file();
     if (!data) return reply.code(400).send({ error: "No file provided" });

@@ -12,7 +12,7 @@ export default async (app, prisma) => {
     url: "/api/messages/:id/reactions",
     config: { rateLimit: { max: RATE_LIMITS.REACTION_MAX, timeWindow: RATE_LIMITS.REACTION_WINDOW } },
     handler: async (req, reply) => {
-      if (!ensureAuth(req, reply)) return;
+      if (!ensureAuth(req, reply)) return reply;
 
       const { emoji } = req.body || {};
       if (!emoji || typeof emoji !== "string" || emoji.length > 10) {
@@ -57,7 +57,7 @@ export default async (app, prisma) => {
 
   // GET /api/messages/:id/reactions
   app.get("/api/messages/:id/reactions", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const reactions = await prisma.reaction.findMany({
       where: { messageId: req.params.id },

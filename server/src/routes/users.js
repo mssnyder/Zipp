@@ -12,7 +12,7 @@ function formatUser(u) {
 export default async (app, prisma) => {
   // GET /api/users?q=<query> — search users by username
   app.get("/api/users", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const q = String(req.query.q || "").trim();
     const users = await prisma.user.findMany({
@@ -27,7 +27,7 @@ export default async (app, prisma) => {
 
   // GET /api/users/:id
   app.get("/api/users/:id", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const user = await prisma.user.findUnique({
       where: { id: req.params.id },

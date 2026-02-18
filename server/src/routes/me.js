@@ -57,7 +57,7 @@ function pruneExpiredLinkTokens() {
 export default async (app, prisma) => {
   // GET /api/me
   app.get("/api/me", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
     const user = await prisma.user.findUnique({
       where: { id: req.auth.user.id },
       include: { accounts: true },
@@ -71,7 +71,7 @@ export default async (app, prisma) => {
     url: "/api/me",
     config: { rateLimit: { max: RATE_LIMITS.PROFILE_UPDATE_MAX, timeWindow: RATE_LIMITS.PROFILE_UPDATE_WINDOW } },
     handler: async (req, reply) => {
-      if (!ensureAuth(req, reply)) return;
+      if (!ensureAuth(req, reply)) return reply;
 
       const body = await updateSchema
         .validate(req.body, { abortEarly: false })
@@ -99,7 +99,7 @@ export default async (app, prisma) => {
 
   // POST /api/me/avatar (multipart upload)
   app.post("/api/me/avatar", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const data = await req.file();
     if (!data) return reply.code(400).send({ error: "No file uploaded" });
@@ -133,7 +133,7 @@ export default async (app, prisma) => {
     url: "/api/me/password",
     config: { rateLimit: { max: 3, timeWindow: "10 minutes" } },
     handler: async (req, reply) => {
-      if (!ensureAuth(req, reply)) return;
+      if (!ensureAuth(req, reply)) return reply;
 
       const user = await prisma.user.findUnique({
         where: { id: req.auth.user.id },
@@ -165,7 +165,7 @@ export default async (app, prisma) => {
     url: "/api/me/accounts/:provider",
     config: { rateLimit: { max: 5, timeWindow: "5 minutes" } },
     handler: async (req, reply) => {
-      if (!ensureAuth(req, reply)) return;
+      if (!ensureAuth(req, reply)) return reply;
 
       const { provider } = req.params;
       const user = await prisma.user.findUnique({
@@ -191,7 +191,7 @@ export default async (app, prisma) => {
     url: "/api/me/link-token",
     config: { rateLimit: { max: 5, timeWindow: "5 minutes" } },
     handler: async (req, reply) => {
-      if (!ensureAuth(req, reply)) return;
+      if (!ensureAuth(req, reply)) return reply;
 
       pruneExpiredLinkTokens();
       const token = randomBytes(32).toString("hex");

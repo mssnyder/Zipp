@@ -26,7 +26,7 @@ function formatMessage(msg) {
 export default async (app, prisma) => {
   // GET /api/conversations/:id/messages
   app.get("/api/conversations/:id/messages", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     // Verify membership
     const membership = await prisma.conversationParticipant.findUnique({
@@ -59,7 +59,7 @@ export default async (app, prisma) => {
     url: "/api/conversations/:id/messages",
     config: { rateLimit: { max: RATE_LIMITS.MESSAGE_MAX, timeWindow: RATE_LIMITS.MESSAGE_WINDOW } },
     handler: async (req, reply) => {
-      if (!ensureAuth(req, reply)) return;
+      if (!ensureAuth(req, reply)) return reply;
 
       const membership = await prisma.conversationParticipant.findUnique({
         where: { conversationId_userId: { conversationId: req.params.id, userId: req.auth.user.id } },
@@ -112,7 +112,7 @@ export default async (app, prisma) => {
 
   // PATCH /api/conversations/:id/messages/:msgId/read
   app.patch("/api/conversations/:id/messages/:msgId/read", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return;
+    if (!ensureAuth(req, reply)) return reply;
 
     const membership = await prisma.conversationParticipant.findUnique({
       where: { conversationId_userId: { conversationId: req.params.id, userId: req.auth.user.id } },
