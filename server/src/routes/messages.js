@@ -103,36 +103,21 @@ export default async (app, prisma) => {
       });
       if (!membership) return reply.code(403).send({ error: "Forbidden" });
 
-      const { ciphertext, nonce, type = "TEXT", replyToId } = req.body || {};
-      if (!ciphertext || !nonce) {
-        return reply.code(400).send({ error: "Missing ciphertext or nonce" });
+      const {
+        nonce,
+        type = "TEXT",
+        replyToId,
+        recipientCiphertext,
+        senderCiphertext,
+      } = req.body || {};
+      if (!nonce || !recipientCiphertext || !senderCiphertext) {
+        return reply.code(400).send({
+          error:
+            "Missing required fields: nonce, recipientCiphertext, or senderCiphertext",
+        });
       }
       if (!["TEXT", "GIF", "IMAGE"].includes(type)) {
         return reply.code(400).send({ error: "Invalid message type" });
-      }
-
-      // Get recipient's public key
-      const recipientId = req.params.id.split("-").pop();
-      const recipient = await prisma.user.findUnique({
-        where: { id: recipientId },
-        select: { publicKey: true },
-      });
-
-      // Get sender's public key
-      const sender = await prisma.user.findUnique({
-        where: { id: req.auth.user.id },
-        select: { publicKey: true },
-      });
-
-      // Encrypt twice - once for recipient, once for sender
-      let recipientCiphertext, senderCiphertext;
-      if (recipient?.publicKey && sender?.publicKey) {
-        const recipientEnc = await encryptForRecipient(ciphertext, recipient.publicKey);
-        const senderEnc = await encryptForSender(ciphertext, sender.publicKey, nonce);
-        recipientCiphertext = recipientEnc.ciphertext;
-        senderCiphertext = senderEnc.ciphertext;
-      } else {
-        return reply.code(500).send({ error: "Missing public keys for encryption" });
       }
 
       const message = await prisma.message.create({
@@ -217,31 +202,5 @@ export default async (app, prisma) => {
 
       return { ok: true };
     },
-  });
+  );
 };
-
-// Helper function to encrypt for recipient
-async function encryptForRecipient(plaintext, recipientPublicKey) {
-  const keyPair = await SimpleKeyPair.fromHex(recipientPublicKey);
-  const nonce = await crypto.getRandomBytes(12);
-  const ciphertext = await keyPair.encrypt(
-    utf8.encode(plaintext),
-    box.nonceWithIV(nonce),
-    box.mac,
-    box.withoutNonce,
-  );
-  return { ciphertext: base64.encode(ciphertext), nonce: base64.encode(nonce) };
-}
-
-// Helper function to encrypt for sender
-async function encryptForSender(plaintext, senderPublicKey, originalNonce) {
-  const keyPair = await SimpleKeyPair.fromHex(senderPublicKey);
-  const nonce = await crypto.getRandomBytes(12);
-  const ciphertext = await keyPair.encrypt(
-    utf8.encode(plaintext),
-    box.nonceWithIV(nonce),
-    box.mac,
-    box.withoutNonce,
-  );
-  return { ciphertext: base64.encode(ciphertext), nonce: base64.encode(nonce) };
-}

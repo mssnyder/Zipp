@@ -157,11 +157,17 @@ class ChatProvider extends ChangeNotifier {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
-    final enc = await CryptoService.encrypt(text, keyPair!, recipientKey);
+    // Encrypt for recipient
+    final encRecipient = await CryptoService.encrypt(text, keyPair!, recipientKey);
+    
+    // Encrypt for sender (my own public key)
+    final encSender = await CryptoService.encrypt(text, keyPair!, await CryptoService.getPublicKeyBase64(keyPair!));
+    
     final msg = await _api.sendMessage(
       conversationId: conversationId,
-      ciphertext: enc.ciphertext,
-      nonce: enc.nonce,
+      recipientCiphertext: encRecipient.ciphertext,
+      senderCiphertext: encSender.ciphertext,
+      nonce: encRecipient.nonce,
       type: 'TEXT',
       replyToId: replyToId,
     );
@@ -178,19 +184,40 @@ class ChatProvider extends ChangeNotifier {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
-    final payload = jsonEncode({
+    // Encrypt for recipient
+    final encRecipient = await CryptoService.encrypt(
+      jsonEncode({
+        'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
+        'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
+        'title': gifResult['title'] ?? '',
+      }),
+      keyPair!,
+      recipientKey,
+    );
+    
+    // Encrypt for sender (my own public key)
+    final encSender = await CryptoService.encrypt(
+      jsonEncode({
+        'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
+        'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
+        'title': gifResult['title'] ?? '',
+      }),
+      keyPair!,
+      await CryptoService.getPublicKeyBase64(keyPair!),
+    );
+    
+    final msg = await _api.sendMessage(
+      conversationId: conversationId,
+      recipientCiphertext: encRecipient.ciphertext,
+      senderCiphertext: encSender.ciphertext,
+      nonce: encRecipient.nonce,
+      type: 'GIF',
+    );
+    msg.plaintext = jsonEncode({
       'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
       'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
       'title': gifResult['title'] ?? '',
     });
-    final enc = await CryptoService.encrypt(payload, keyPair!, recipientKey);
-    final msg = await _api.sendMessage(
-      conversationId: conversationId,
-      ciphertext: enc.ciphertext,
-      nonce: enc.nonce,
-      type: 'GIF',
-    );
-    msg.plaintext = payload;
     _appendMessage(conversationId, msg);
     return msg;
   }
@@ -204,15 +231,28 @@ class ChatProvider extends ChangeNotifier {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
-    final payload = jsonEncode(attachment);
-    final enc = await CryptoService.encrypt(payload, keyPair!, recipientKey);
+    // Encrypt for recipient
+    final encRecipient = await CryptoService.encrypt(
+      jsonEncode(attachment),
+      keyPair!,
+      recipientKey,
+    );
+    
+    // Encrypt for sender (my own public key)
+    final encSender = await CryptoService.encrypt(
+      jsonEncode(attachment),
+      keyPair!,
+      await CryptoService.getPublicKeyBase64(keyPair!),
+    );
+    
     final msg = await _api.sendMessage(
       conversationId: conversationId,
-      ciphertext: enc.ciphertext,
-      nonce: enc.nonce,
+      recipientCiphertext: encRecipient.ciphertext,
+      senderCiphertext: encSender.ciphertext,
+      nonce: encRecipient.nonce,
       type: type,
     );
-    msg.plaintext = payload;
+    msg.plaintext = jsonEncode(attachment);
     _appendMessage(conversationId, msg);
     return msg;
   }

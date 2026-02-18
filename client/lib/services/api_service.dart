@@ -194,13 +194,15 @@ class ApiService {
 
   Future<ZippMessage> sendMessage({
     required String conversationId,
-    required String ciphertext,
+    required String recipientCiphertext,
+    required String senderCiphertext,
     required String nonce,
     String type = 'TEXT',
     String? replyToId,
   }) async {
     final r = await _dio.post('/api/conversations/$conversationId/messages', data: {
-      'ciphertext': ciphertext,
+      'recipientCiphertext': recipientCiphertext,
+      'senderCiphertext': senderCiphertext,
       'nonce': nonce,
       'type': type,
       if (replyToId != null) 'replyToId': replyToId,
