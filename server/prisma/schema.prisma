@@ -23,7 +23,7 @@ model User {
 
   accounts     Account[]
   sessions     Session[]
-  sentMessages Message[]                @relation("sender")
+  sentMessages Message[]                 @relation("sender")
   reactions    Reaction[]
   participants ConversationParticipant[]
 }
@@ -74,15 +74,16 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String      @id @default(cuid())
-  conversationId String
-  senderId       String
-  ciphertext     String
-  nonce          String
-  type           MessageType @default(TEXT)
-  replyToId      String?
-  readAt         DateTime?
-  createdAt      DateTime    @default(now())
+  id                  String      @id @default(cuid())
+  conversationId      String
+  senderId            String
+  recipientCiphertext String
+  senderCiphertext    String
+  nonce               String
+  type                MessageType @default(TEXT)
+  replyToId           String?
+  readAt              DateTime?
+  createdAt           DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation("sender", fields: [senderId], references: [id])
@@ -105,11 +106,11 @@ enum MessageType {
 model Attachment {
   id         String   @id @default(cuid())
   uploaderId String
-  url        String   // /uploads/attachments/<filename>
-  thumbUrl   String?  // /uploads/thumbs/<filename> — for images & video posters
+  url        String // /uploads/attachments/<filename>
+  thumbUrl   String? // /uploads/thumbs/<filename> — for images & video posters
   mimeType   String
   sizeBytes  Int
-  duration   Int?     // video duration in seconds
+  duration   Int? // video duration in seconds
   createdAt  DateTime @default(now())
 }
 

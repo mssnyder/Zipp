@@ -72,7 +72,9 @@ class CryptoService {
     );
   }
 
-  /// Decrypt ciphertext. Returns plaintext string or null on failure.
+  /// Decrypt message intended for recipient.
+  /// Uses sender's public key to encrypt, recipient's private key to decrypt.
+  /// Returns null if decryption fails.
   static Future<String?> decrypt(
     String ciphertextB64,
     String nonceB64,
@@ -105,7 +107,47 @@ class CryptoService {
       print('[CryptoService] Plaintext preview: ${utf8.decode(plain).substring(0, 50)}...');
       return utf8.decode(plain);
     } catch (e) {
-      print('[CryptoService] Decryption FAILED: $e');
+      print('[CryptoService] Recipient decryption FAILED: $e');
+      return null;
+    }
+  }
+
+  /// Decrypt message intended for sender (own messages).
+  /// Uses recipient's public key to encrypt, sender's private key to decrypt.
+  /// Returns null if decryption fails.
+  static Future<String?> decryptForSender(
+    String ciphertextB64,
+    String nonceB64,
+    SimpleKeyPair myKp,
+    String recipientPublicKeyBase64,
+  ) async {
+    try {
+      print('[CryptoService] Attempting sender decryption...');
+      print('[CryptoService] Recipient public key: ${recipientPublicKeyBase64.substring(0, 20)}...');
+      print('[CryptoService] Message length: ${ciphertextB64.length} chars, nonce: ${nonceB64.length} chars');
+      
+      final recipientPub = SimplePublicKey(
+        base64Url.decode(recipientPublicKeyBase64),
+        type: KeyPairType.x25519,
+      );
+      final aesKey = await _deriveKey(myKp, recipientPub);
+      print('[CryptoService] Derived sender AES key successfully');
+      
+      final raw = base64Url.decode(ciphertextB64);
+      print('[CryptoService] Decoded ciphertext length: ${raw.length} bytes');
+      
+      final mac = Mac(raw.sublist(raw.length - 16));
+      final cipherBytes = raw.sublist(0, raw.length - 16);
+      final nonce = base64Url.decode(nonceB64);
+      print('[CryptoService] Decoded nonce length: ${nonce.length} bytes');
+      
+      final secretBox = SecretBox(cipherBytes, nonce: nonce, mac: mac);
+      final plain = await _aesGcm.decrypt(secretBox, secretKey: aesKey);
+      print('[CryptoService] Sender decryption successful! Plaintext length: ${plain.length} bytes');
+      print('[CryptoService] Plaintext preview: ${utf8.decode(plain).substring(0, 50)}...');
+      return utf8.decode(plain);
+    } catch (e) {
+      print('[CryptoService] Sender decryption FAILED: $e');
       return null;
     }
   }

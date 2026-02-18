@@ -252,16 +252,23 @@ class ChatProvider extends ChangeNotifier {
   Future<void> _decryptAll(List<ZippMessage> msgs) async {
     if (keyPair == null) return;
     for (final msg in msgs) {
-      final senderKey = await _getPublicKey(msg.senderId);
-      if (senderKey == null) continue;
+      final recipientKey = await _getPublicKey(msg.senderId);
+      if (recipientKey == null) continue;
       // Only decrypt if not already decrypted
       if (msg.plaintext == null) {
-        msg.plaintext = await CryptoService.decrypt(
-          msg.ciphertext,
-          msg.nonce,
-          keyPair!,
-          senderKey,
-        );
+        final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, recipientKey);
+        if (plain != null) {
+          msg.plaintext = plain;
+        } else {
+          // Try sender decryption for own messages
+          final senderKey = await _getPublicKey(msg.senderId);
+          if (senderKey != null) {
+            final senderPlain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
+            if (senderPlain != null) {
+              msg.plaintext = senderPlain;
+            }
+          }
+        }
       }
     }
   }
@@ -269,11 +276,30 @@ class ChatProvider extends ChangeNotifier {
   Future<String?> decryptMessage(ZippMessage msg) async {
     if (msg.plaintext != null) return msg.plaintext;
     if (keyPair == null) return null;
+    
+    // Try to decrypt with recipient's key first (for messages from others)
+    final recipientKey = await _getPublicKey(msg.senderId);
+    if (recipientKey != null) {
+      print('[ChatProvider] Trying recipient decryption for message from ${msg.senderId}');
+      final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, recipientKey);
+      if (plain != null) {
+        msg.plaintext = plain;
+        return plain;
+      }
+    }
+    
+    // If that fails, try decrypting with sender's key (for own messages)
     final senderKey = await _getPublicKey(msg.senderId);
-    if (senderKey == null) return null;
-    final plain = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
-    msg.plaintext = plain;
-    return plain;
+    if (senderKey != null) {
+      print('[ChatProvider] Trying sender decryption for own message from ${msg.senderId}');
+      final plain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
+      if (plain != null) {
+        msg.plaintext = plain;
+        return plain;
+      }
+    }
+    
+    return null;
   }
   
   // Decrypt with retry - keeps trying until message is decrypted
@@ -300,14 +326,24 @@ class ChatProvider extends ChangeNotifier {
           final senderKey = await _getPublicKey(msg.senderId);
           print('[ChatProvider] [Attempt $attempt] Decrypting message from ${msg.senderId}');
           if (senderKey != null) {
-            msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
-          }
-          if (msg.plaintext == null) {
-            print('[ChatProvider] [Attempt $attempt] FAILED to decrypt message from ${msg.senderId}');
-            allDecrypted = false;
-          } else {
-            print('[ChatProvider] [Attempt $attempt] Successfully decrypted message from ${msg.senderId}');
-            decryptedCount++;
+            // Try recipient decryption
+            final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
+            if (plain != null) {
+              msg.plaintext = plain;
+              print('[ChatProvider] [Attempt $attempt] Successfully decrypted message from ${msg.senderId}');
+              decryptedCount++;
+            } else {
+              // Try sender decryption for own messages
+              final senderPlain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
+              if (senderPlain != null) {
+                msg.plaintext = senderPlain;
+                print('[ChatProvider] [Attempt $attempt] Successfully decrypted own message');
+                decryptedCount++;
+              } else {
+                print('[ChatProvider] [Attempt $attempt] FAILED to decrypt message from ${msg.senderId}');
+                allDecrypted = false;
+              }
+            }
           }
         } else {
           decryptedCount++;
@@ -374,8 +410,22 @@ class ChatProvider extends ChangeNotifier {
       final senderKey = await _getPublicKey(msg.senderId);
       print('[ChatProvider] Decrypting WebSocket message from ${msg.senderId}');
       if (senderKey != null) {
-        msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
-        print('[ChatProvider] Successfully decrypted WebSocket message from ${msg.senderId}');
+        // Try recipient decryption first
+        final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
+        if (plain != null) {
+          msg.plaintext = plain;
+          print('[ChatProvider] Successfully decrypted WebSocket message from ${msg.senderId}');
+        } else {
+          // Try sender decryption for own messages
+          print('[ChatProvider] Trying sender decryption for own message');
+          final senderPlain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
+          if (senderPlain != null) {
+            msg.plaintext = senderPlain;
+            print('[ChatProvider] Successfully decrypted own message');
+          } else {
+            print('[ChatProvider] FAILED to decrypt message from ${msg.senderId}');
+          }
+        }
       } else {
         print('[ChatProvider] FAILED to get public key for ${msg.senderId}');
       }

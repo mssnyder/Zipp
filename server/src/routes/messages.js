@@ -1,7 +1,10 @@
 import { RATE_LIMITS, PAGINATION } from "../constants.js";
 
 function ensureAuth(req, reply) {
-  if (!req.auth?.user) { reply.code(401).send({ error: "Unauthorized" }); return false; }
+  if (!req.auth?.user) {
+    reply.code(401).send({ error: "Unauthorized" });
+    return false;
+  }
   return true;
 }
 
@@ -10,12 +13,20 @@ function formatMessage(msg) {
     id: msg.id,
     conversationId: msg.conversationId,
     senderId: msg.senderId,
-    ciphertext: msg.ciphertext,
+    recipientCiphertext: msg.recipientCiphertext,
+    senderCiphertext: msg.senderCiphertext,
     nonce: msg.nonce,
     type: msg.type,
     replyToId: msg.replyToId,
     replyTo: msg.replyTo
-      ? { id: msg.replyTo.id, senderId: msg.replyTo.senderId, ciphertext: msg.replyTo.ciphertext, nonce: msg.replyTo.nonce, type: msg.replyTo.type }
+      ? {
+          id: msg.replyTo.id,
+          senderId: msg.replyTo.senderId,
+          recipientCiphertext: msg.replyTo.recipientCiphertext,
+          senderCiphertext: msg.replyTo.senderCiphertext,
+          nonce: msg.replyTo.nonce,
+          type: msg.replyTo.type,
+        }
       : null,
     reactions: msg.reactions || [],
     readAt: msg.readAt,
@@ -30,7 +41,12 @@ export default async (app, prisma) => {
 
     // Verify membership
     const membership = await prisma.conversationParticipant.findUnique({
-      where: { conversationId_userId: { conversationId: req.params.id, userId: req.auth.user.id } },
+      where: {
+        conversationId_userId: {
+          conversationId: req.params.id,
+          userId: req.auth.user.id,
+        },
+      },
     });
     if (!membership) return reply.code(403).send({ error: "Forbidden" });
 
@@ -43,8 +59,19 @@ export default async (app, prisma) => {
         ...(before ? { createdAt: { lt: new Date(before) } } : {}),
       },
       include: {
-        replyTo: { select: { id: true, senderId: true, ciphertext: true, nonce: true, type: true } },
-        reactions: { select: { id: true, userId: true, emoji: true, createdAt: true } },
+        replyTo: {
+          select: {
+            id: true,
+            senderId: true,
+            recipientCiphertext: true,
+            senderCiphertext: true,
+            nonce: true,
+            type: true,
+          },
+        },
+        reactions: {
+          select: { id: true, userId: true, emoji: true, createdAt: true },
+        },
       },
       orderBy: { createdAt: "desc" },
       take,
@@ -57,12 +84,22 @@ export default async (app, prisma) => {
   app.route({
     method: "POST",
     url: "/api/conversations/:id/messages",
-    config: { rateLimit: { max: RATE_LIMITS.MESSAGE_MAX, timeWindow: RATE_LIMITS.MESSAGE_WINDOW } },
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.MESSAGE_MAX,
+        timeWindow: RATE_LIMITS.MESSAGE_WINDOW,
+      },
+    },
     handler: async (req, reply) => {
       if (!ensureAuth(req, reply)) return reply;
 
       const membership = await prisma.conversationParticipant.findUnique({
-        where: { conversationId_userId: { conversationId: req.params.id, userId: req.auth.user.id } },
+        where: {
+          conversationId_userId: {
+            conversationId: req.params.id,
+            userId: req.auth.user.id,
+          },
+        },
       });
       if (!membership) return reply.code(403).send({ error: "Forbidden" });
 
@@ -74,17 +111,51 @@ export default async (app, prisma) => {
         return reply.code(400).send({ error: "Invalid message type" });
       }
 
+      // Get recipient's public key
+      const recipientId = req.params.id.split("-").pop();
+      const recipient = await prisma.user.findUnique({
+        where: { id: recipientId },
+        select: { publicKey: true },
+      });
+
+      // Get sender's public key
+      const sender = await prisma.user.findUnique({
+        where: { id: req.auth.user.id },
+        select: { publicKey: true },
+      });
+
+      // Encrypt twice - once for recipient, once for sender
+      let recipientCiphertext, senderCiphertext;
+      if (recipient?.publicKey && sender?.publicKey) {
+        const recipientEnc = await encryptForRecipient(ciphertext, recipient.publicKey);
+        const senderEnc = await encryptForSender(ciphertext, sender.publicKey, nonce);
+        recipientCiphertext = recipientEnc.ciphertext;
+        senderCiphertext = senderEnc.ciphertext;
+      } else {
+        return reply.code(500).send({ error: "Missing public keys for encryption" });
+      }
+
       const message = await prisma.message.create({
         data: {
           conversationId: req.params.id,
           senderId: req.auth.user.id,
-          ciphertext,
+          recipientCiphertext,
+          senderCiphertext,
           nonce,
           type,
           replyToId: replyToId || null,
         },
         include: {
-          replyTo: { select: { id: true, senderId: true, ciphertext: true, nonce: true, type: true } },
+          replyTo: {
+            select: {
+              id: true,
+              senderId: true,
+              recipientCiphertext: true,
+              senderCiphertext: true,
+              nonce: true,
+              type: true,
+            },
+          },
           reactions: true,
         },
       });
@@ -100,7 +171,9 @@ export default async (app, prisma) => {
         where: { conversationId: req.params.id },
         select: { userId: true },
       });
-      const userIds = participants.map((p) => p.userId).filter((id) => id !== req.auth.user.id);
+      const userIds = participants
+        .map((p) => p.userId)
+        .filter((id) => id !== req.auth.user.id);
       app.broadcast(userIds, "message:new", {
         conversationId: req.params.id,
         message: formatMessage(message),
@@ -111,30 +184,64 @@ export default async (app, prisma) => {
   });
 
   // PATCH /api/conversations/:id/messages/:msgId/read
-  app.patch("/api/conversations/:id/messages/:msgId/read", async (req, reply) => {
-    if (!ensureAuth(req, reply)) return reply;
+  app.patch(
+    "/api/conversations/:id/messages/:msgId/read",
+    async (req, reply) => {
+      if (!ensureAuth(req, reply)) return reply;
 
-    const membership = await prisma.conversationParticipant.findUnique({
-      where: { conversationId_userId: { conversationId: req.params.id, userId: req.auth.user.id } },
-    });
-    if (!membership) return reply.code(403).send({ error: "Forbidden" });
+      const membership = await prisma.conversationParticipant.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId: req.params.id,
+            userId: req.auth.user.id,
+          },
+        },
+      });
+      if (!membership) return reply.code(403).send({ error: "Forbidden" });
 
-    const msg = await prisma.message.findFirst({
-      where: { id: req.params.msgId, conversationId: req.params.id },
-    });
-    if (!msg || msg.senderId === req.auth.user.id) return { ok: true };
+      const msg = await prisma.message.findFirst({
+        where: { id: req.params.msgId, conversationId: req.params.id },
+      });
+      if (!msg || msg.senderId === req.auth.user.id) return { ok: true };
 
-    const updated = await prisma.message.update({
-      where: { id: req.params.msgId },
-      data: { readAt: new Date() },
-    });
+      const updated = await prisma.message.update({
+        where: { id: req.params.msgId },
+        data: { readAt: new Date() },
+      });
 
-    app.broadcast([msg.senderId], "message:read", {
-      conversationId: req.params.id,
-      messageId: msg.id,
-      readAt: updated.readAt,
-    });
+      app.broadcast([msg.senderId], "message:read", {
+        conversationId: req.params.id,
+        messageId: msg.id,
+        readAt: updated.readAt,
+      });
 
-    return { ok: true };
+      return { ok: true };
+    },
   });
 };
+
+// Helper function to encrypt for recipient
+async function encryptForRecipient(plaintext, recipientPublicKey) {
+  const keyPair = await SimpleKeyPair.fromHex(recipientPublicKey);
+  const nonce = await crypto.getRandomBytes(12);
+  const ciphertext = await keyPair.encrypt(
+    utf8.encode(plaintext),
+    box.nonceWithIV(nonce),
+    box.mac,
+    box.withoutNonce,
+  );
+  return { ciphertext: base64.encode(ciphertext), nonce: base64.encode(nonce) };
+}
+
+// Helper function to encrypt for sender
+async function encryptForSender(plaintext, senderPublicKey, originalNonce) {
+  const keyPair = await SimpleKeyPair.fromHex(senderPublicKey);
+  const nonce = await crypto.getRandomBytes(12);
+  const ciphertext = await keyPair.encrypt(
+    utf8.encode(plaintext),
+    box.nonceWithIV(nonce),
+    box.mac,
+    box.withoutNonce,
+  );
+  return { ciphertext: base64.encode(ciphertext), nonce: base64.encode(nonce) };
+}

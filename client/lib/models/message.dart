@@ -5,14 +5,16 @@ enum MessageType { text, gif, image, video, file }
 class MessageReplyPreview {
   final String id;
   final String senderId;
-  final String ciphertext;
+  final String recipientCiphertext;
+  final String senderCiphertext;
   final String nonce;
   final MessageType type;
 
   const MessageReplyPreview({
     required this.id,
     required this.senderId,
-    required this.ciphertext,
+    required this.recipientCiphertext,
+    required this.senderCiphertext,
     required this.nonce,
     required this.type,
   });
@@ -21,7 +23,8 @@ class MessageReplyPreview {
       MessageReplyPreview(
         id: json['id'] as String,
         senderId: json['senderId'] as String,
-        ciphertext: json['ciphertext'] as String,
+        recipientCiphertext: json['recipientCiphertext'] as String,
+        senderCiphertext: json['senderCiphertext'] as String,
         nonce: json['nonce'] as String,
         type: _parseType(json['type'] as String?),
       );
@@ -39,7 +42,8 @@ class ZippMessage {
   final String id;
   final String conversationId;
   final String senderId;
-  final String ciphertext;
+  final String recipientCiphertext;
+  final String senderCiphertext;
   final String nonce;
   final MessageType type;
   final String? replyToId;
@@ -55,7 +59,8 @@ class ZippMessage {
     required this.id,
     required this.conversationId,
     required this.senderId,
-    required this.ciphertext,
+    required this.recipientCiphertext,
+    required this.senderCiphertext,
     required this.nonce,
     required this.type,
     this.replyToId,
@@ -73,7 +78,8 @@ class ZippMessage {
         id: json['id'] as String,
         conversationId: json['conversationId'] as String,
         senderId: json['senderId'] as String,
-        ciphertext: json['ciphertext'] as String,
+        recipientCiphertext: json['recipientCiphertext'] as String,
+        senderCiphertext: json['senderCiphertext'] as String,
         nonce: json['nonce'] as String,
         type: _parseType(json['type'] as String?),
         replyToId: json['replyToId'] as String?,
@@ -101,7 +107,8 @@ class ZippMessage {
         id: id,
         conversationId: conversationId,
         senderId: senderId,
-        ciphertext: ciphertext,
+        recipientCiphertext: recipientCiphertext,
+        senderCiphertext: senderCiphertext,
         nonce: nonce,
         type: type,
         replyToId: replyToId,
