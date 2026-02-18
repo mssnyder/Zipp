@@ -37,16 +37,16 @@ class AuthProvider extends ChangeNotifier {
       if (e.statusCode == 401) _user = null;
     } catch (_) {
       _user = null;
-    } finally {
-      _setLoading(false);
     }
-    // No password available — can only load local key.
+    // Key management runs before we notify listeners, so ChatProvider gets
+    // the key pair on the very first notification.
     if (_user != null) {
       try {
         await _ensureKeyPair();
       } catch (_) {}
-      notifyListeners();
     }
+    _loading = false;
+    notifyListeners();
   }
 
   Future<void> login(String email, String password) async {
@@ -57,16 +57,16 @@ class AuthProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       _setError(e.message);
       rethrow;
-    } finally {
-      _setLoading(false);
     }
-    // Key management is best-effort — must not invalidate the session
+    // Key management runs before we notify listeners, so ChatProvider gets
+    // the key pair on the very first notification after login.
     try {
       _loginPassword = password;
       await _ensureKeyPair();
     } catch (_) {} finally {
       _loginPassword = null;
     }
+    _loading = false;
     notifyListeners();
   }
 
@@ -96,6 +96,7 @@ class AuthProvider extends ChangeNotifier {
     _keyPair = null;
     _loginPassword = null;
     await StorageService.clearSession();
+    await StorageService.deletePrivateKey();
     notifyListeners();
   }
 
@@ -130,10 +131,12 @@ class AuthProvider extends ChangeNotifier {
     }
 
     // Step 4: generate new key pair only if no backup exists on the server.
-    // If a backup exists but we can't decrypt it (no password), leave keyPair
-    // null — don't overwrite the server key.
+    // If a backup exists but we can't decrypt it (no password, or wrong password),
+    // leave keyPair null — never overwrite the server key with a new one.
     if (_keyPair == null) {
-      if (hasServerBackup && _loginPassword == null) {
+      if (hasServerBackup) {
+        // Backup exists but we couldn't decrypt it — don't generate a new key
+        // that would overwrite the backup. User can try again or restore manually.
         return;
       }
       _keyPair = await CryptoService.generateKeyPair();

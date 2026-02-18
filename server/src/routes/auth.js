@@ -250,11 +250,6 @@ export default (app, prisma) => {
       return reply.redirect(`${process.env.FRONTEND_URL}/complete-profile`);
     }
 
-    await prisma.user.update({
-      where: { id: account.userId },
-      data: { displayName: `${firstName} ${lastName}`.trim() || account.user.displayName },
-    });
-
     req.regenerateSession();
     req.session.userId = account.userId;
     return reply.redirect(process.env.FRONTEND_URL);

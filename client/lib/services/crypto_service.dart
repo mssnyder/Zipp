@@ -134,17 +134,13 @@ class CryptoService {
 
   // ── Key backup: PBKDF2 + AES-256-GCM wrapping ───────────────────────────
 
-  /// Derive a 256-bit wrapping key from [password] and [salt] using PBKDF2.
-  static Future<SecretKey> _deriveWrappingKey(String password, List<int> salt) async {
-    final pbkdf2 = Pbkdf2(
-      macAlgorithm: Hmac.sha256(),
-      iterations: _pbkdf2Iterations,
-      bits: 256,
+  /// Derive wrapping key bytes using PBKDF2 in an isolate to avoid blocking UI.
+  static Future<SecretKey> _deriveWrappingKeyInIsolate(String password, List<int> salt) async {
+    final keyBytes = await compute(
+      _pbkdf2Isolate,
+      _Pbkdf2Params(password, salt),
     );
-    return pbkdf2.deriveKey(
-      secretKey: SecretKey(utf8.encode(password)),
-      nonce: salt,
-    );
+    return SecretKey(keyBytes);
   }
 
   /// Encrypt a private key with a password-derived wrapping key.
@@ -155,10 +151,7 @@ class CryptoService {
     final rng = Random.secure();
     final salt = Uint8List.fromList(List.generate(16, (_) => rng.nextInt(256)));
 
-    final wrappingKey = await compute(
-      _pbkdf2Isolate,
-      _Pbkdf2Params(password, salt),
-    );
+    final wrappingKey = await _deriveWrappingKeyInIsolate(password, salt);
 
     final secretBox = await _aesGcm.encrypt(
       privKeyBytes,
@@ -179,10 +172,7 @@ class CryptoService {
   ) async {
     try {
       final salt = base64Url.decode(saltB64);
-      final wrappingKey = await compute(
-        _pbkdf2Isolate,
-        _Pbkdf2Params(password, salt),
-      );
+      final wrappingKey = await _deriveWrappingKeyInIsolate(password, salt);
       final raw = base64Url.decode(encryptedB64);
       final mac = Mac(raw.sublist(raw.length - 16));
       final cipherBytes = raw.sublist(0, raw.length - 16);
@@ -203,14 +193,16 @@ class _Pbkdf2Params {
 }
 
 /// Top-level function for compute() isolate.
-Future<SecretKey> _pbkdf2Isolate(_Pbkdf2Params params) async {
+/// Returns raw key bytes (List<int>) so the result is serializable across isolates.
+Future<List<int>> _pbkdf2Isolate(_Pbkdf2Params params) async {
   final pbkdf2 = Pbkdf2(
     macAlgorithm: Hmac.sha256(),
     iterations: 600000,
     bits: 256,
   );
-  return pbkdf2.deriveKey(
+  final key = await pbkdf2.deriveKey(
     secretKey: SecretKey(utf8.encode(params.password)),
     nonce: params.salt,
   );
+  return await key.extractBytes();
 }

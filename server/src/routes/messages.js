@@ -156,9 +156,7 @@ export default async (app, prisma) => {
         where: { conversationId: req.params.id },
         select: { userId: true },
       });
-      const userIds = participants
-        .map((p) => p.userId)
-        .filter((id) => id !== req.auth.user.id);
+      const userIds = participants.map((p) => p.userId);
       app.broadcast(userIds, "message:new", {
         conversationId: req.params.id,
         message: formatMessage(message),

@@ -15,7 +15,15 @@ function formatConversation(conv, myUserId) {
       ? { id: other.user.id, username: other.user.username, displayName: other.user.displayName, avatarUrl: other.user.avatarUrl }
       : null,
     lastMessage: lastMsg
-      ? { id: lastMsg.id, type: lastMsg.type, createdAt: lastMsg.createdAt, senderId: lastMsg.senderId }
+      ? {
+          id: lastMsg.id,
+          type: lastMsg.type,
+          createdAt: lastMsg.createdAt,
+          senderId: lastMsg.senderId,
+          recipientCiphertext: lastMsg.recipientCiphertext,
+          senderCiphertext: lastMsg.senderCiphertext,
+          nonce: lastMsg.nonce,
+        }
       : null,
   };
 }

@@ -90,7 +90,9 @@ class ConversationTile extends StatelessWidget {
       case 'VIDEO': return '🎬 Video';
       case 'FILE': return '📎 File';
     }
-    // For TEXT, try to find the decrypted message from the provider's cache
+    // Use the decrypted plaintext from the preview itself
+    if (lastMsg.plaintext != null) return lastMsg.plaintext!;
+    // Fall back to checking loaded messages cache
     final messages = chat.messagesFor(conversation.id);
     for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].id == lastMsg.id && messages[i].plaintext != null) {

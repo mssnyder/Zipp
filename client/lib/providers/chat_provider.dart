@@ -78,9 +78,38 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
     try {
       _conversations = await _api.getConversations();
+      await _decryptPreviews();
     } finally {
       _convsLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Decrypt last-message previews for the conversation list.
+  Future<void> _decryptPreviews() async {
+    if (keyPair == null) return;
+    for (final conv in _conversations) {
+      final lm = conv.lastMessage;
+      if (lm == null || lm.plaintext != null) continue;
+      if (lm.type != 'TEXT') continue; // non-text types use static labels
+      if (lm.recipientCiphertext == null || lm.senderCiphertext == null || lm.nonce == null) continue;
+
+      final senderKey = await _getPublicKey(lm.senderId);
+      if (senderKey == null) continue;
+
+      // Try recipient ciphertext first (works if someone else sent it to me)
+      final plain = await CryptoService.decrypt(
+        lm.recipientCiphertext!, lm.nonce!, keyPair!, senderKey,
+      );
+      if (plain != null) {
+        lm.plaintext = plain;
+      } else {
+        // Try sender copy (works if I sent it)
+        final senderPlain = await CryptoService.decryptForSender(
+          lm.senderCiphertext!, lm.nonce!, keyPair!, senderKey,
+        );
+        if (senderPlain != null) lm.plaintext = senderPlain;
+      }
     }
   }
 

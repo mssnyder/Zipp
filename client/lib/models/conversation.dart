@@ -29,12 +29,22 @@ class LastMessagePreview {
   final String type;
   final DateTime createdAt;
   final String senderId;
+  final String? recipientCiphertext;
+  final String? senderCiphertext;
+  final String? nonce;
 
-  const LastMessagePreview({
+  /// Decrypted plaintext — populated client-side.
+  String? plaintext;
+
+  LastMessagePreview({
     required this.id,
     required this.type,
     required this.createdAt,
     required this.senderId,
+    this.recipientCiphertext,
+    this.senderCiphertext,
+    this.nonce,
+    this.plaintext,
   });
 
   factory LastMessagePreview.fromJson(Map<String, dynamic> json) =>
@@ -43,6 +53,9 @@ class LastMessagePreview {
         type: json['type'] as String? ?? 'TEXT',
         createdAt: DateTime.parse(json['createdAt'] as String),
         senderId: json['senderId'] as String,
+        recipientCiphertext: json['recipientCiphertext'] as String?,
+        senderCiphertext: json['senderCiphertext'] as String?,
+        nonce: json['nonce'] as String?,
       );
 }
 
