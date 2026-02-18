@@ -136,16 +136,16 @@ class ChatProvider extends ChangeNotifier {
 
   Future<ZippMessage?> sendGifMessage({
     required String conversationId,
-    required Map<String, dynamic> tenorResult,
+    required Map<String, dynamic> gifResult,
     required String recipientId,
   }) async {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
     final payload = jsonEncode({
-      'gifUrl': tenorResult['media_formats']?['gif']?['url'] ?? '',
-      'tinyUrl': tenorResult['media_formats']?['tinygif']?['url'] ?? '',
-      'title': tenorResult['title'] ?? '',
+      'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
+      'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
+      'title': gifResult['title'] ?? '',
     });
     final enc = await CryptoService.encrypt(payload, keyPair!, recipientKey);
     final msg = await _api.sendMessage(

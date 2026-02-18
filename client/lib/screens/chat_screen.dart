@@ -83,7 +83,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final chat = context.read<ChatProvider>();
     await chat.sendGifMessage(
       conversationId: widget.conversationId,
-      tenorResult: gif,
+      gifResult: gif,
       recipientId: widget.participantId,
     );
     _scrollToBottom();

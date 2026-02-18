@@ -6,7 +6,7 @@ import {
   createDecipheriv,
   createHash,
 } from "node:crypto";
-import UAParser from "ua-parser-js";
+import { UAParser } from "ua-parser-js";
 import ms from "ms";
 import { SESSION } from "../constants.js";
 

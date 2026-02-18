@@ -11,7 +11,6 @@ import grant from "fastify-grant";
 import pino from "pino";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { existsSync } from "fs";
 
 import databasePlugin from "./plugins/database.js";
 import sessionPlugin, { grantSessionStore } from "./plugins/session.js";
@@ -25,7 +24,7 @@ import conversationsRoutes from "./routes/conversations.js";
 import messagesRoutes from "./routes/messages.js";
 import reactionsRoutes from "./routes/reactions.js";
 import keysRoutes from "./routes/keys.js";
-import tenorRoutes from "./routes/tenor.js";
+import gifsRoutes from "./routes/gifs.js";
 import uploadRoutes from "./routes/upload.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -34,7 +33,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const transport = pino.transport({
   targets:
     process.env.NODE_ENV === "production"
-      ? [{ target: "pino/file", options: { destination: join(process.env.DATA_DIR ?? process.cwd(), "logs", "app.log"), mkdir: true } }]
+      ? [
+          {
+            target: "pino/file",
+            options: {
+              destination: join(
+                process.env.DATA_DIR ?? process.cwd(),
+                "logs",
+                "app.log",
+              ),
+              mkdir: true,
+            },
+          },
+        ]
       : [{ target: "pino-pretty", options: { singleLine: true } }],
 });
 
@@ -44,10 +55,17 @@ const logger = pino(
     base: { app: "zipp" },
     messageKey: "msg",
     timestamp: pino.stdTimeFunctions.isoTime,
-    redact: { paths: ["req.headers.cookie", "req.body.password"], censor: "[redacted]" },
-    serializers: { req: pino.stdSerializers.req, res: pino.stdSerializers.res, err: pino.stdSerializers.err },
+    redact: {
+      paths: ["req.headers.cookie", "req.body.password"],
+      censor: "[redacted]",
+    },
+    serializers: {
+      req: pino.stdSerializers.req,
+      res: pino.stdSerializers.res,
+      err: pino.stdSerializers.err,
+    },
   },
-  transport
+  transport,
 );
 
 const app = Fastify({
@@ -65,13 +83,21 @@ app.addHook("onRequest", (req, _reply, done) => {
 });
 
 app.addHook("onResponse", (req, reply, done) => {
-  req.log.info({ req: { method: req.method, url: req.url }, res: { statusCode: reply.statusCode } }, "request completed");
+  req.log.info(
+    {
+      req: { method: req.method, url: req.url },
+      res: { statusCode: reply.statusCode },
+    },
+    "request completed",
+  );
   done();
 });
 
 // CORS — Flutter apps connect from same domain or localhost in dev
 await app.register(cors, {
-  origin: process.env.FRONTEND_URL || (process.env.NODE_ENV === "production" ? false : true),
+  origin:
+    process.env.FRONTEND_URL ||
+    (process.env.NODE_ENV === "production" ? false : true),
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
 });
@@ -119,7 +145,7 @@ await app.register(
       pkce: true,
       callback: "/api/oauth/google",
     },
-  })
+  }),
 );
 
 // Register routes — auth first so preHandler hook runs for all subsequent routes
@@ -131,11 +157,14 @@ await conversationsRoutes(app, prisma);
 await messagesRoutes(app, prisma);
 await reactionsRoutes(app, prisma);
 await keysRoutes(app, prisma);
-await tenorRoutes(app);
+await gifsRoutes(app);
 await uploadRoutes(app, prisma);
 
 // Health check
-app.get("/health", async () => ({ status: "ok", ts: new Date().toISOString() }));
+app.get("/health", async () => ({
+  status: "ok",
+  ts: new Date().toISOString(),
+}));
 
 app.setNotFoundHandler((req, reply) => {
   reply.code(404).send({ error: "Not found" });
@@ -143,12 +172,17 @@ app.setNotFoundHandler((req, reply) => {
 
 app.setErrorHandler((err, req, reply) => {
   req.log.error({ err }, "unhandled error");
-  reply.code(err.statusCode || 500).send({ error: err.message || "Internal server error" });
+  reply
+    .code(err.statusCode || 500)
+    .send({ error: err.message || "Internal server error" });
 });
 
 const port = Number(process.env.PORT) || 4200;
 app.listen({ port, host: "127.0.0.1" }, (err) => {
-  if (err) { app.log.error(err); process.exit(1); }
+  if (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
   app.log.info(`Zipp server listening on port ${port}`);
 });
 

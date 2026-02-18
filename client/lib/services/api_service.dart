@@ -183,16 +183,16 @@ class ApiService {
         .toList();
   }
 
-  // ── Tenor GIFs ────────────────────────────────────────────────────────────
+  // ── GIFs (Klipy) ──────────────────────────────────────────────────────────
 
   Future<List<dynamic>> searchGifs(String query) async {
-    final r = await _dio.get('/api/tenor/search', queryParameters: {'q': query, 'limit': 20});
+    final r = await _dio.get('/api/gifs/search', queryParameters: {'q': query, 'limit': 20});
     final data = await _check(r);
     return data['results'] as List? ?? [];
   }
 
   Future<List<dynamic>> getTrendingGifs() async {
-    final r = await _dio.get('/api/tenor/trending', queryParameters: {'limit': 20});
+    final r = await _dio.get('/api/gifs/trending', queryParameters: {'limit': 20});
     final data = await _check(r);
     return data['results'] as List? ?? [];
   }

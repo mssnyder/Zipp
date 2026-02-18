@@ -111,7 +111,7 @@ class _GifPickerState extends State<GifPicker> {
                           itemCount: _results.length,
                           itemBuilder: (ctx, i) {
                             final r = _results[i] as Map<String, dynamic>;
-                            final tinyUrl = r['media_formats']?['tinygif']?['url'] as String?;
+                            final tinyUrl = r['file']?['xs']?['gif']?['url'] as String?;
                             if (tinyUrl == null) return const SizedBox.shrink();
                             return GestureDetector(
                               onTap: () => Navigator.of(context).pop(r),
