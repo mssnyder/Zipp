@@ -104,8 +104,8 @@ class ChatProvider extends ChangeNotifier {
       final msgs = await _api.getMessages(convId);
       _messages[convId] = msgs;
       _hasMore[convId] = msgs.length >= 50;
-      await _decryptAll(msgs);
-      await Future.wait(msgs.map(_ensureDecrypted));
+      // Decrypt all messages (will retry if keyPair not available yet)
+      await _decryptAllWithRetry(msgs);
     } finally {
       _msgLoading[convId] = false;
       notifyListeners();
@@ -127,8 +127,7 @@ class ChatProvider extends ChangeNotifier {
       if (older.isEmpty) {
         _hasMore[convId] = false;
       } else {
-        await _decryptAll(older);
-        await Future.wait(older.map(_ensureDecrypted));
+        await _decryptAllWithRetry(older);
         _messages[convId] = [...older, ...existing];
         _hasMore[convId] = older.length >= 50;
       }
@@ -242,15 +241,17 @@ class ChatProvider extends ChangeNotifier {
   Future<void> _decryptAll(List<ZippMessage> msgs) async {
     if (keyPair == null) return;
     for (final msg in msgs) {
-      if (msg.plaintext != null) continue;
       final senderKey = await _getPublicKey(msg.senderId);
       if (senderKey == null) continue;
-      msg.plaintext = await CryptoService.decrypt(
-        msg.ciphertext,
-        msg.nonce,
-        keyPair!,
-        senderKey,
-      );
+      // Only decrypt if not already decrypted
+      if (msg.plaintext == null) {
+        msg.plaintext = await CryptoService.decrypt(
+          msg.ciphertext,
+          msg.nonce,
+          keyPair!,
+          senderKey,
+        );
+      }
     }
   }
 
@@ -264,13 +265,24 @@ class ChatProvider extends ChangeNotifier {
     return plain;
   }
   
-  // Always ensure messages are decrypted when loaded (fixes encrypted messages after refresh)
-  Future<void> _ensureDecrypted(ZippMessage msg) async {
-    if (msg.plaintext == null && keyPair != null) {
-      final senderKey = await _getPublicKey(msg.senderId);
-      if (senderKey != null) {
-        msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
+  // Decrypt with retry - keeps trying until message is decrypted
+  Future<void> _decryptAllWithRetry(List<ZippMessage> msgs) async {
+    // Poll until all messages are decrypted or keyPair becomes unavailable
+    while (keyPair != null) {
+      bool allDecrypted = true;
+      for (final msg in msgs) {
+        if (msg.plaintext == null) {
+          final senderKey = await _getPublicKey(msg.senderId);
+          if (senderKey != null) {
+            msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
+          }
+          allDecrypted = false;
+        }
       }
+      // If all decrypted or keyPair is now null, break
+      if (allDecrypted || keyPair == null) break;
+      // Small delay before retry to avoid tight loop
+      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
@@ -308,8 +320,14 @@ class ChatProvider extends ChangeNotifier {
     if (convId == null || msgJson == null) return;
 
     final msg = ZippMessage.fromJson(msgJson);
-    await decryptMessage(msg);
-    await _ensureDecrypted(msg);
+    // Decrypt immediately when received via WebSocket
+    if (keyPair != null) {
+      final senderKey = await _getPublicKey(msg.senderId);
+      if (senderKey != null) {
+        msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
+      }
+    }
+    await _decryptAllWithRetry([msg]);
 
     // Check if message already exists in current conversation
     final existingMsgs = _messages[convId];
