@@ -217,14 +217,15 @@ export default (app, prisma) => {
 
   // Google OAuth callback
   app.get("/api/oauth/google", async (req, reply) => {
-    const isLink = Boolean(req.session?.grant?.dynamic?.link);
+    // isLink is true for both the old grant.dynamic.link flow and the new linkUserId token flow
+    const isLink = Boolean(req.session?.grant?.dynamic?.link) || Boolean(req.session?.linkUserId);
     try {
       const profile = await getGoogleProfile(req.session.grant.response);
       if (isLink) return handleGoogleLink(profile, req, reply);
       return handleGoogleLogin(profile, req, reply);
     } catch (err) {
       req.log.error({ err }, "google oauth failed");
-      const path = isLink ? "/settings" : "/login";
+      const path = isLink ? "/profile" : "/login";
       return reply.redirect(`${process.env.FRONTEND_URL}${path}?error=oauth_failed`);
     }
   });
@@ -259,24 +260,27 @@ export default (app, prisma) => {
   }
 
   async function handleGoogleLink({ sub, firstName, lastName }, req, reply) {
-    if (!req.auth.user) {
+    // Support both old grant.dynamic.link flow and new linkUserId token flow (from desktop)
+    const userId = req.auth.user?.id ?? req.session.linkUserId;
+    if (!userId) {
       return reply.redirect(`${process.env.FRONTEND_URL}/login?error=not_authenticated`);
     }
+    delete req.session.linkUserId;
 
     const existing = await prisma.account.findUnique({
       where: { provider_providerAccountId: { provider: "google", providerAccountId: sub } },
     });
-    if (existing && existing.userId !== req.auth.user.id) {
-      return reply.redirect(`${process.env.FRONTEND_URL}/settings?error=account_linked`);
+    if (existing && existing.userId !== userId) {
+      return reply.redirect(`${process.env.FRONTEND_URL}/profile?error=account_linked`);
     }
     if (!existing) {
       await prisma.account.create({
-        data: { provider: "google", providerAccountId: sub, userId: req.auth.user.id },
+        data: { provider: "google", providerAccountId: sub, userId },
       });
     }
 
     req.regenerateSession();
-    return reply.redirect(`${process.env.FRONTEND_URL}/settings`);
+    return reply.redirect(`${process.env.FRONTEND_URL}/profile?linked=google`);
   }
 
   // POST /api/auth/complete-profile (after Google OAuth for new users)

@@ -8,7 +8,14 @@ import '../../providers/chat_provider.dart';
 
 class ConversationTile extends StatelessWidget {
   final Conversation conversation;
-  const ConversationTile({super.key, required this.conversation});
+  final VoidCallback? onTap;
+  final bool isSelected;
+  const ConversationTile({
+    super.key,
+    required this.conversation,
+    this.onTap,
+    this.isSelected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +74,9 @@ class ConversationTile extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
             )
           : null,
-      onTap: () => context.push(
+      selected: isSelected,
+      selectedTileColor: ZippTheme.surfaceVariant,
+      onTap: onTap ?? () => context.push(
         '/chat/${conversation.id}?pid=${p?.id ?? ''}&name=${Uri.encodeComponent(name)}',
       ),
     );

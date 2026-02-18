@@ -6,25 +6,27 @@ import 'services/api_service.dart';
 import 'services/websocket_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'screens/adaptive_home.dart';
 import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/profile_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ZippApp());
+  final api = await ApiService.create();
+  runApp(ZippApp(api: api));
 }
 
 class ZippApp extends StatefulWidget {
-  const ZippApp({super.key});
+  final ApiService api;
+  const ZippApp({super.key, required this.api});
 
   @override
   State<ZippApp> createState() => _ZippAppState();
 }
 
 class _ZippAppState extends State<ZippApp> {
-  final _api = ApiService();
+  late final ApiService _api = widget.api;
   final _ws = WebSocketService();
   late final AuthProvider _auth;
   late final ChatProvider _chat;
@@ -49,7 +51,7 @@ class _ZippAppState extends State<ZippApp> {
       routes: [
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/register', builder: (_, __) => const LoginScreen(showRegister: true)),
-        GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+        GoRoute(path: '/', builder: (_, __) => const AdaptiveHome()),
         GoRoute(
           path: '/chat/:convId',
           builder: (_, state) => ChatScreen(

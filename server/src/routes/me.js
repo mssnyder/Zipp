@@ -1,4 +1,7 @@
+import { randomBytes } from "node:crypto";
+import { join } from "node:path";
 import * as yup from "yup";
+import { hashPassword, verifyAndUpgrade } from "../auth/crypto.js";
 import { RATE_LIMITS } from "../constants.js";
 
 function ensureAuth(req, reply) {
@@ -19,6 +22,7 @@ function formatUser(user) {
     publicKey: user.publicKey,
     emailVerified: user.emailVerified,
     isAdmin: user.isAdmin,
+    hasPassword: Boolean(user.hashedPassword),
     createdAt: user.createdAt,
     accounts: user.accounts?.map((a) => ({ provider: a.provider })),
   };
@@ -33,6 +37,22 @@ const updateSchema = yup.object({
     .matches(/^[a-zA-Z0-9_]+$/, "alphanumeric and underscores only")
     .optional(),
 });
+
+const passwordSchema = yup.object({
+  currentPassword: yup.string().required(),
+  newPassword: yup.string().min(8).max(100).required(),
+});
+
+// Short-lived in-memory store for OAuth link tokens: token → { userId, exp }
+const LINK_TOKEN_TTL_MS = 5 * 60 * 1000;
+export const linkTokens = new Map();
+
+function pruneExpiredLinkTokens() {
+  const now = Date.now();
+  for (const [token, entry] of linkTokens) {
+    if (entry.exp < now) linkTokens.delete(token);
+  }
+}
 
 export default async (app, prisma) => {
   // GET /api/me
@@ -89,9 +109,7 @@ export default async (app, prisma) => {
       return reply.code(400).send({ error: "Invalid file type. Allowed: jpg, png, webp, gif" });
     }
 
-    const { randomBytes } = await import("node:crypto");
     const { writeFile, mkdir } = await import("node:fs/promises");
-    const { join } = await import("node:path");
 
     const ext = data.mimetype.split("/")[1];
     const filename = `${req.auth.user.id}-${randomBytes(6).toString("hex")}.${ext}`;
@@ -107,5 +125,103 @@ export default async (app, prisma) => {
       include: { accounts: true },
     });
     return { user: formatUser(user) };
+  });
+
+  // POST /api/me/password — change password (requires current password)
+  app.route({
+    method: "POST",
+    url: "/api/me/password",
+    config: { rateLimit: { max: 3, timeWindow: "10 minutes" } },
+    handler: async (req, reply) => {
+      if (!ensureAuth(req, reply)) return;
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.auth.user.id },
+        include: { accounts: true },
+      });
+      if (!user.hashedPassword) {
+        return reply.code(400).send({ error: "Account has no password. Use social login to sign in." });
+      }
+
+      const body = await passwordSchema
+        .validate(req.body, { abortEarly: false })
+        .catch((err) => { reply.code(400).send({ error: err.errors.join(", ") }); return null; });
+      if (!body) return;
+
+      const result = await verifyAndUpgrade(user.hashedPassword, body.currentPassword);
+      if (!result.ok) return reply.code(400).send({ error: "Current password is incorrect" });
+
+      await prisma.user.update({
+        where: { id: req.auth.user.id },
+        data: { hashedPassword: await hashPassword(body.newPassword) },
+      });
+      return { ok: true };
+    },
+  });
+
+  // DELETE /api/me/accounts/:provider — unlink a social account
+  app.route({
+    method: "DELETE",
+    url: "/api/me/accounts/:provider",
+    config: { rateLimit: { max: 5, timeWindow: "5 minutes" } },
+    handler: async (req, reply) => {
+      if (!ensureAuth(req, reply)) return;
+
+      const { provider } = req.params;
+      const user = await prisma.user.findUnique({
+        where: { id: req.auth.user.id },
+        include: { accounts: true },
+      });
+
+      if (!user.hashedPassword && user.accounts.length <= 1) {
+        return reply.code(400).send({ error: "Cannot remove your only login method. Set a password first." });
+      }
+
+      const account = user.accounts.find((a) => a.provider === provider);
+      if (!account) return reply.code(404).send({ error: "Linked account not found" });
+
+      await prisma.account.delete({ where: { id: account.id } });
+      return { ok: true };
+    },
+  });
+
+  // GET /api/me/link-token — generate a one-time token for OAuth linking from desktop
+  app.route({
+    method: "GET",
+    url: "/api/me/link-token",
+    config: { rateLimit: { max: 5, timeWindow: "5 minutes" } },
+    handler: async (req, reply) => {
+      if (!ensureAuth(req, reply)) return;
+
+      pruneExpiredLinkTokens();
+      const token = randomBytes(32).toString("hex");
+      linkTokens.set(token, { userId: req.auth.user.id, exp: Date.now() + LINK_TOKEN_TTL_MS });
+
+      const url = `${process.env.SERVER_URL}/api/me/start-link/google?t=${token}`;
+      return { token, url };
+    },
+  });
+
+  // GET /api/me/start-link/:provider?t=TOKEN — browser entry point for link token flow
+  app.get("/api/me/start-link/:provider", async (req, reply) => {
+    const { provider } = req.params;
+    const { t: token } = req.query;
+
+    if (!token) return reply.code(400).send({ error: "Missing link token" });
+
+    const entry = linkTokens.get(token);
+    if (!entry || entry.exp < Date.now()) {
+      linkTokens.delete(token);
+      return reply.redirect(`${process.env.FRONTEND_URL}/profile?error=link_token_expired`);
+    }
+
+    linkTokens.delete(token); // consume immediately — single use
+    req.session.linkUserId = entry.userId;
+
+    if (provider !== "google") {
+      return reply.code(400).send({ error: "Unsupported provider" });
+    }
+
+    return reply.redirect("/connect/google");
   });
 };

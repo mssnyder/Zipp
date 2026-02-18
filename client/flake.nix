@@ -39,6 +39,9 @@
           glib
           libsysprof-capture
           pcre2
+          util-linux.dev
+          libselinux
+          libsepol
           # flutter_secure_storage_linux
           libsecret
           # Image/media

@@ -19,6 +19,30 @@ class ChatProvider extends ChangeNotifier {
   // Public key cache: userId -> base64 pubkey
   final Map<String, String> _pubKeyCache = {};
 
+  // Desktop two-pane: selected conversation
+  String? _selectedConvId;
+  String? _selectedParticipantId;
+  String _selectedParticipantName = '';
+
+  String? get selectedConvId => _selectedConvId;
+  String? get selectedParticipantId => _selectedParticipantId;
+  String get selectedParticipantName => _selectedParticipantName;
+
+  void selectConversation(Conversation conv) {
+    _selectedConvId = conv.id;
+    _selectedParticipantId = conv.participant?.id ?? '';
+    _selectedParticipantName = conv.participant?.name ?? '';
+    notifyListeners();
+    if (_messages[conv.id] == null) loadMessages(conv.id);
+  }
+
+  void clearSelection() {
+    _selectedConvId = null;
+    _selectedParticipantId = null;
+    _selectedParticipantName = '';
+    notifyListeners();
+  }
+
   // Conversations
   List<Conversation> _conversations = [];
   bool _convsLoading = false;

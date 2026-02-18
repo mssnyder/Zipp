@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -17,8 +20,17 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _displayNameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
+  final _currentPwCtrl = TextEditingController();
+  final _newPwCtrl = TextEditingController();
+  final _confirmPwCtrl = TextEditingController();
   bool _saving = false;
-  String? _error;
+  bool _changingPw = false;
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+  String? _profileError;
+  String? _pwError;
+  Timer? _linkPollTimer;
 
   @override
   void initState() {
@@ -32,11 +44,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     _displayNameCtrl.dispose();
     _usernameCtrl.dispose();
+    _currentPwCtrl.dispose();
+    _newPwCtrl.dispose();
+    _confirmPwCtrl.dispose();
+    _linkPollTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _save() async {
-    setState(() { _saving = true; _error = null; });
+    setState(() { _saving = true; _profileError = null; });
     try {
       final api = context.read<ApiService>();
       final auth = context.read<AuthProvider>();
@@ -48,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated')));
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _profileError = e.message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -66,10 +82,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final updated = await api.uploadAvatar(File(xfile.path));
       auth.updateUser(updated);
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _profileError = e.message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _changePassword() async {
+    final newPw = _newPwCtrl.text;
+    final confirmPw = _confirmPwCtrl.text;
+    if (newPw != confirmPw) {
+      setState(() => _pwError = 'New passwords do not match');
+      return;
+    }
+    if (newPw.length < 8) {
+      setState(() => _pwError = 'Password must be at least 8 characters');
+      return;
+    }
+
+    setState(() { _changingPw = true; _pwError = null; });
+    try {
+      await context.read<ApiService>().changePassword(
+        current: _currentPwCtrl.text,
+        newPass: newPw,
+      );
+      _currentPwCtrl.clear();
+      _newPwCtrl.clear();
+      _confirmPwCtrl.clear();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Password updated')));
+    } on ApiException catch (e) {
+      setState(() => _pwError = e.message);
+    } finally {
+      if (mounted) setState(() => _changingPw = false);
+    }
+  }
+
+  Future<void> _unlinkAccount(String provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ZippTheme.surface,
+        title: const Text('Unlink account'),
+        content: Text('Remove your $provider login?'),
+        actions: [
+          TextButton(onPressed: () => ctx.pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => ctx.pop(true),
+            child: const Text('Remove', style: TextStyle(color: ZippTheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final api = context.read<ApiService>();
+      final auth = context.read<AuthProvider>();
+      await api.unlinkAccount(provider);
+      final updated = await api.getMe();
+      auth.updateUser(updated);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$provider unlinked')));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: ZippTheme.error));
+    }
+  }
+
+  Future<void> _linkGoogle() async {
+    try {
+      final api = context.read<ApiService>();
+      final result = await api.getLinkToken();
+      final url = Uri.parse(result['url']!);
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw Exception('Could not open browser');
+      }
+      _startLinkPoll();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: ZippTheme.error));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: ZippTheme.error));
+    }
+  }
+
+  void _startLinkPoll() {
+    _linkPollTimer?.cancel();
+    final initialCount = context.read<AuthProvider>().user?.linkedProviders.length ?? 0;
+    int attempts = 0;
+    _linkPollTimer = Timer.periodic(const Duration(seconds: 3), (t) async {
+      attempts++;
+      if (attempts > 20) { t.cancel(); return; }
+      try {
+        final api = context.read<ApiService>();
+        final auth = context.read<AuthProvider>();
+        final updated = await api.getMe();
+        if (updated.linkedProviders.length > initialCount) {
+          t.cancel();
+          auth.updateUser(updated);
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Google account linked')));
+        }
+      } catch (_) {}
+    });
   }
 
   @override
@@ -78,97 +195,242 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = auth.user;
     if (user == null) return const SizedBox.shrink();
 
+    final isDesktop = MediaQuery.sizeOf(context).width >= 720;
+
     return Scaffold(
       backgroundColor: ZippTheme.background,
       appBar: AppBar(
         title: const Text('Profile'),
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            // Avatar
-            GestureDetector(
-              onTap: _pickAvatar,
-              child: Stack(
-                alignment: Alignment.bottomRight,
-                children: [
-                  CircleAvatar(
-                    radius: 52,
-                    backgroundColor: ZippTheme.surfaceVariant,
-                    backgroundImage: user.avatarUrl != null
-                        ? NetworkImage('${context.read<ApiService>().resolveUrl(user.avatarUrl!)}')
-                        : null,
-                    child: user.avatarUrl == null
-                        ? Text(
-                            user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-                            style: const TextStyle(fontSize: 40, color: ZippTheme.accent1),
-                          )
-                        : null,
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                      color: ZippTheme.accent1,
-                      shape: BoxShape.circle,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isDesktop ? 32 : 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Avatar ──────────────────────────────────────────────────
+                Center(
+                  child: GestureDetector(
+                    onTap: kIsWeb ? null : _pickAvatar,
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        CircleAvatar(
+                          radius: 52,
+                          backgroundColor: ZippTheme.surfaceVariant,
+                          backgroundImage: user.avatarUrl != null
+                              ? NetworkImage(context.read<ApiService>().resolveUrl(user.avatarUrl!))
+                              : null,
+                          child: user.avatarUrl == null
+                              ? Text(
+                                  user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+                                  style: const TextStyle(fontSize: 40, color: ZippTheme.accent1),
+                                )
+                              : null,
+                        ),
+                        if (!kIsWeb)
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: ZippTheme.accent1,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white),
+                          ),
+                      ],
                     ),
-                    child: const Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white),
                   ),
+                ),
+                const SizedBox(height: 8),
+                Center(child: Text(user.email, style: Theme.of(context).textTheme.bodySmall)),
+                const SizedBox(height: 32),
+
+                // ── Profile fields ──────────────────────────────────────────
+                if (_profileError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(_profileError!, style: const TextStyle(color: ZippTheme.error)),
+                  ),
+                TextFormField(
+                  controller: _displayNameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Display name',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _usernameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Username',
+                    prefixIcon: Icon(Icons.alternate_email),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  height: 50,
+                  child: _saving
+                      ? const Center(child: CircularProgressIndicator())
+                      : ElevatedButton(onPressed: _save, child: const Text('Save changes')),
+                ),
+
+                const SizedBox(height: 32),
+                const Divider(),
+
+                // ── Change password (only for accounts with a password) ──────
+                if (user.hasPassword) ...[
+                  const SizedBox(height: 24),
+                  Text('Change password', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 16),
+                  if (_pwError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(_pwError!, style: const TextStyle(color: ZippTheme.error)),
+                    ),
+                  TextFormField(
+                    controller: _currentPwCtrl,
+                    obscureText: _obscureCurrent,
+                    decoration: InputDecoration(
+                      labelText: 'Current password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureCurrent
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _newPwCtrl,
+                    obscureText: _obscureNew,
+                    decoration: InputDecoration(
+                      labelText: 'New password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureNew
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _confirmPwCtrl,
+                    obscureText: _obscureConfirm,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _changePassword(),
+                    decoration: InputDecoration(
+                      labelText: 'Confirm new password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureConfirm
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 50,
+                    child: _changingPw
+                        ? const Center(child: CircularProgressIndicator())
+                        : OutlinedButton(
+                            onPressed: _changePassword,
+                            child: const Text('Update password'),
+                          ),
+                  ),
+                  const SizedBox(height: 32),
+                  const Divider(),
                 ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(user.email, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 32),
 
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(_error!, style: const TextStyle(color: ZippTheme.error)),
-              ),
-
-            TextFormField(
-              controller: _displayNameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Display name',
-                prefixIcon: Icon(Icons.badge_outlined),
-              ),
+                // ── Linked accounts ─────────────────────────────────────────
+                const SizedBox(height: 24),
+                Text('Linked accounts', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                _LinkedAccountRow(
+                  provider: 'google',
+                  label: 'Google',
+                  icon: Icons.g_mobiledata,
+                  isLinked: user.linkedProviders.contains('google'),
+                  canUnlink: user.hasPassword || user.linkedProviders.length > 1,
+                  onLink: _linkGoogle,
+                  onUnlink: () => _unlinkAccount('google'),
+                ),
+                const SizedBox(height: 32),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _usernameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Username',
-                prefixIcon: Icon(Icons.alternate_email),
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: _saving
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _save,
-                      child: const Text('Save changes'),
-                    ),
-            ),
-
-            const SizedBox(height: 32),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.link, color: ZippTheme.accent2),
-              title: const Text('Linked accounts'),
-              subtitle: Text(
-                user.linkedProviders.isEmpty
-                    ? 'None'
-                    : user.linkedProviders.join(', '),
-                style: const TextStyle(color: ZippTheme.textSecondary),
-              ),
-            ),
-          ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _LinkedAccountRow extends StatelessWidget {
+  final String provider;
+  final String label;
+  final IconData icon;
+  final bool isLinked;
+  final bool canUnlink;
+  final VoidCallback onLink;
+  final VoidCallback onUnlink;
+
+  const _LinkedAccountRow({
+    required this.provider,
+    required this.label,
+    required this.icon,
+    required this.isLinked,
+    required this.canUnlink,
+    required this.onLink,
+    required this.onUnlink,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: ZippTheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ZippTheme.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: isLinked ? ZippTheme.accent2 : ZippTheme.textSecondary, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(
+                  isLinked ? 'Connected' : 'Not connected',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isLinked ? ZippTheme.online : ZippTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isLinked && canUnlink)
+            TextButton(
+              onPressed: onUnlink,
+              child: const Text('Unlink', style: TextStyle(color: ZippTheme.error)),
+            )
+          else if (!isLinked)
+            TextButton(
+              onPressed: onLink,
+              child: const Text('Link', style: TextStyle(color: ZippTheme.accent2)),
+            ),
+        ],
       ),
     );
   }

@@ -19,12 +19,14 @@ class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String participantId;
   final String participantName;
+  final bool embedded;
 
   const ChatScreen({
     super.key,
     required this.conversationId,
     required this.participantId,
     required this.participantName,
+    this.embedded = false,
   });
 
   @override
@@ -163,6 +165,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: ZippTheme.background,
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         title: Row(
           children: [
             Stack(

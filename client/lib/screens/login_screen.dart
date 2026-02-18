@@ -141,6 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           TextFormField(
                             controller: _emailCtrl,
                             keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'Email',
                               prefixIcon: Icon(Icons.email_outlined),
@@ -151,6 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _usernameCtrl,
+                              textInputAction: TextInputAction.next,
                               decoration: const InputDecoration(
                                 labelText: 'Username',
                                 prefixIcon: Icon(Icons.alternate_email),
@@ -160,6 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _displayNameCtrl,
+                              textInputAction: TextInputAction.next,
                               decoration: const InputDecoration(
                                 labelText: 'Display name (optional)',
                                 prefixIcon: Icon(Icons.badge_outlined),
@@ -170,6 +173,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           TextFormField(
                             controller: _passwordCtrl,
                             obscureText: _obscure,
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (_) => _submit(),
                             decoration: InputDecoration(
                               labelText: 'Password',
                               prefixIcon: const Icon(Icons.lock_outline),

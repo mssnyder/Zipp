@@ -7,6 +7,7 @@ class ZippUser {
   final String? publicKey;
   final bool emailVerified;
   final bool isAdmin;
+  final bool hasPassword;
   final DateTime createdAt;
   final List<String> linkedProviders;
 
@@ -19,6 +20,7 @@ class ZippUser {
     this.publicKey,
     required this.emailVerified,
     required this.isAdmin,
+    required this.hasPassword,
     required this.createdAt,
     this.linkedProviders = const [],
   });
@@ -34,6 +36,7 @@ class ZippUser {
         publicKey: json['publicKey'] as String?,
         emailVerified: json['emailVerified'] as bool? ?? false,
         isAdmin: json['isAdmin'] as bool? ?? false,
+        hasPassword: json['hasPassword'] as bool? ?? false,
         createdAt: DateTime.parse(json['createdAt'] as String),
         linkedProviders: (json['accounts'] as List<dynamic>?)
                 ?.map((a) => a['provider'] as String)

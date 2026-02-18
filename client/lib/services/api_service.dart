@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import '../config/constants.dart';
 import '../models/user.dart';
 import '../models/conversation.dart';
@@ -18,17 +20,33 @@ class ApiException implements Exception {
 
 class ApiService {
   late final Dio _dio;
-  final CookieJar _cookieJar = CookieJar();
 
-  ApiService() {
-    _dio = Dio(BaseOptions(
+  ApiService._();
+
+  static Future<ApiService> create() async {
+    final svc = ApiService._();
+    final options = BaseOptions(
       baseUrl: ZippConfig.serverUrl,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
       headers: {'Content-Type': 'application/json'},
-      validateStatus: (_) => true, // Handle errors manually
-    ));
-    _dio.interceptors.add(CookieManager(_cookieJar));
+      validateStatus: (_) => true,
+    );
+
+    if (kIsWeb) {
+      // On web, the browser handles cookies automatically.
+      svc._dio = Dio(options);
+    } else {
+      // On native, persist cookies to disk so sessions survive restarts.
+      final dir = await getApplicationSupportDirectory();
+      final jar = PersistCookieJar(
+        storage: FileStorage('${dir.path}/.cookies/'),
+      );
+      svc._dio = Dio(options);
+      svc._dio.interceptors.add(CookieManager(jar));
+    }
+
+    return svc;
   }
 
   Future<Map<String, dynamic>> _check(Response r) async {
@@ -96,6 +114,28 @@ class ApiService {
     final r = await _dio.post('/api/me/avatar', data: form);
     final data = await _check(r);
     return ZippUser.fromJson(data['user'] as Map<String, dynamic>);
+  }
+
+  Future<void> changePassword({required String current, required String newPass}) async {
+    final r = await _dio.post('/api/me/password', data: {
+      'currentPassword': current,
+      'newPassword': newPass,
+    });
+    await _check(r);
+  }
+
+  Future<void> unlinkAccount(String provider) async {
+    final r = await _dio.delete('/api/me/accounts/$provider');
+    await _check(r);
+  }
+
+  Future<Map<String, String>> getLinkToken() async {
+    final r = await _dio.get('/api/me/link-token');
+    final data = await _check(r);
+    return {
+      'token': data['token'] as String,
+      'url': data['url'] as String,
+    };
   }
 
   // ── Keys ──────────────────────────────────────────────────────────────────
@@ -183,7 +223,7 @@ class ApiService {
         .toList();
   }
 
-  // ── GIFs (Klipy) ──────────────────────────────────────────────────────────
+  // ── GIFs ──────────────────────────────────────────────────────────────────
 
   Future<List<dynamic>> searchGifs(String query) async {
     final r = await _dio.get('/api/gifs/search', queryParameters: {'q': query, 'limit': 20});

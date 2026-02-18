@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
@@ -39,6 +41,28 @@ class _MessageInputState extends State<MessageInput> {
   bool _sending = false;
   Timer? _typingTimer;
   bool _isTyping = false;
+
+  bool get _isDesktopOrWeb =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isDesktopOrWeb) {
+      _focusNode.onKeyEvent = (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.enter &&
+            !HardwareKeyboard.instance.isShiftPressed) {
+          _send();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      };
+    }
+  }
 
   @override
   void dispose() {
@@ -169,7 +193,10 @@ class _MessageInputState extends State<MessageInput> {
                     controller: _ctrl,
                     focusNode: _focusNode,
                     onChanged: _onTextChanged,
-                    onSubmitted: (_) => _send(),
+                    // On desktop/web Enter is handled via FocusNode.onKeyEvent.
+                    // On mobile, onSubmitted fires when the soft keyboard send button is tapped.
+                    onSubmitted: _isDesktopOrWeb ? null : (_) => _send(),
+                    textInputAction: _isDesktopOrWeb ? TextInputAction.newline : TextInputAction.send,
                     maxLines: null,
                     style: const TextStyle(color: ZippTheme.textPrimary, fontSize: 15),
                     decoration: InputDecoration(
