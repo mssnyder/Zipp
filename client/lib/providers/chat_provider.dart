@@ -105,6 +105,7 @@ class ChatProvider extends ChangeNotifier {
       _messages[convId] = msgs;
       _hasMore[convId] = msgs.length >= 50;
       await _decryptAll(msgs);
+      await Future.wait(msgs.map(_ensureDecrypted));
     } finally {
       _msgLoading[convId] = false;
       notifyListeners();
@@ -127,6 +128,7 @@ class ChatProvider extends ChangeNotifier {
         _hasMore[convId] = false;
       } else {
         await _decryptAll(older);
+        await Future.wait(older.map(_ensureDecrypted));
         _messages[convId] = [...older, ...existing];
         _hasMore[convId] = older.length >= 50;
       }
@@ -261,6 +263,16 @@ class ChatProvider extends ChangeNotifier {
     msg.plaintext = plain;
     return plain;
   }
+  
+  // Always ensure messages are decrypted when loaded (fixes encrypted messages after refresh)
+  Future<void> _ensureDecrypted(ZippMessage msg) async {
+    if (msg.plaintext == null && keyPair != null) {
+      final senderKey = await _getPublicKey(msg.senderId);
+      if (senderKey != null) {
+        msg.plaintext = await CryptoService.decrypt(msg.ciphertext, msg.nonce, keyPair!, senderKey);
+      }
+    }
+  }
 
   Future<String?> _getPublicKey(String userId) async {
     if (_pubKeyCache.containsKey(userId)) return _pubKeyCache[userId];
@@ -297,16 +309,14 @@ class ChatProvider extends ChangeNotifier {
 
     final msg = ZippMessage.fromJson(msgJson);
     await decryptMessage(msg);
+    await _ensureDecrypted(msg);
 
-    // If the conversation isn't in the list yet (e.g. first message from a
-    // new contact), reload the full list so it appears immediately.
-    if (!_conversations.any((c) => c.id == convId)) {
-      try {
-        _conversations = await _api.getConversations();
-      } catch (_) {}
+    // Check if message already exists in current conversation
+    final existingMsgs = _messages[convId];
+    final exists = existingMsgs?.any((m) => m.id == msg.id) ?? false;
+    if (!exists) {
+      _appendMessage(convId, msg);
     }
-
-    _appendMessage(convId, msg);
   }
 
   void _handleReaction(Map<String, dynamic> payload) {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/constants.dart';
+import 'storage_service.dart';
 
 typedef WsEventHandler = void Function(String event, Map<String, dynamic> payload);
 
@@ -18,8 +19,15 @@ class WebSocketService {
   Future<void> connect() async {
     _disposed = false;
     _reconnectTimer?.cancel();
+    
+    // Get session cookie for authentication
+    final sessionCookie = await StorageService.getSessionCookie();
+    
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(ZippConfig.wsUrl));
+      final wsUri = sessionCookie != null 
+          ? Uri.parse('${ZippConfig.wsUrl}?sid=$sessionCookie')
+          : Uri.parse(ZippConfig.wsUrl);
+      _channel = WebSocketChannel.connect(wsUri);
       await _channel!.ready;
       _sub = _channel!.stream.listen(
         (raw) {

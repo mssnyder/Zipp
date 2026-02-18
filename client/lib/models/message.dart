@@ -67,6 +67,7 @@ class ZippMessage {
   });
 
   bool get isRead => readAt != null;
+  bool get isDecrypted => plaintext != null;
 
   factory ZippMessage.fromJson(Map<String, dynamic> json) => ZippMessage(
         id: json['id'] as String,
