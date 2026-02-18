@@ -116,7 +116,7 @@ export default async (app, prisma) => {
             "Missing required fields: nonce, recipientCiphertext, or senderCiphertext",
         });
       }
-      if (!["TEXT", "GIF", "IMAGE"].includes(type)) {
+      if (!["TEXT", "GIF", "IMAGE", "VIDEO", "FILE"].includes(type)) {
         return reply.code(400).send({ error: "Invalid message type" });
       }
 

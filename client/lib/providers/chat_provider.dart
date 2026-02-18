@@ -96,26 +96,16 @@ class ChatProvider extends ChangeNotifier {
   // ── Messages ──────────────────────────────────────────────────────────────
 
   Future<void> loadMessages(String convId) async {
-    if (_msgLoading[convId] == true) {
-      print('[ChatProvider] Already loading messages for $convId');
-      return;
-    }
+    if (_msgLoading[convId] == true) return;
     _msgLoading[convId] = true;
-    print('[ChatProvider] Starting to load messages for $convId');
     notifyListeners();
 
     try {
-      print('[ChatProvider] Fetching messages from API...');
       final msgs = await _api.getMessages(convId);
-      print('[ChatProvider] Fetched ${msgs.length} messages');
       _messages[convId] = msgs;
       _hasMore[convId] = msgs.length >= 50;
-      print('[ChatProvider] Starting decryption for ${msgs.length} messages...');
-      // Decrypt all messages (will retry if keyPair not available yet)
-      await _decryptAllWithRetry(msgs);
-      print('[ChatProvider] Decryption complete for $convId');
-    } catch (e) {
-      print('[ChatProvider] ERROR loading messages for $convId: $e');
+      await _decryptAll(msgs);
+    } catch (_) {
     } finally {
       _msgLoading[convId] = false;
       notifyListeners();
@@ -137,8 +127,7 @@ class ChatProvider extends ChangeNotifier {
       if (older.isEmpty) {
         _hasMore[convId] = false;
       } else {
-        print('[ChatProvider] Loading ${older.length} older messages');
-        await _decryptAllWithRetry(older);
+        await _decryptAll(older);
         _messages[convId] = [...older, ...existing];
         _hasMore[convId] = older.length >= 50;
       }
@@ -157,12 +146,13 @@ class ChatProvider extends ChangeNotifier {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
-    // Encrypt for recipient
+    // Encrypt for recipient (generates random nonce)
     final encRecipient = await CryptoService.encrypt(text, keyPair!, recipientKey);
-    
-    // Encrypt for sender (my own public key)
-    final encSender = await CryptoService.encrypt(text, keyPair!, await CryptoService.getPublicKeyBase64(keyPair!));
-    
+    // Encrypt sender copy with the SAME nonce so a single stored nonce decrypts both
+    final sharedNonce = base64Url.decode(encRecipient.nonce);
+    final myPubKey = await CryptoService.getPublicKeyBase64(keyPair!);
+    final encSender = await CryptoService.encrypt(text, keyPair!, myPubKey, nonce: sharedNonce);
+
     final msg = await _api.sendMessage(
       conversationId: conversationId,
       recipientCiphertext: encRecipient.ciphertext,
@@ -184,28 +174,17 @@ class ChatProvider extends ChangeNotifier {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
-    // Encrypt for recipient
-    final encRecipient = await CryptoService.encrypt(
-      jsonEncode({
-        'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
-        'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
-        'title': gifResult['title'] ?? '',
-      }),
-      keyPair!,
-      recipientKey,
-    );
-    
-    // Encrypt for sender (my own public key)
-    final encSender = await CryptoService.encrypt(
-      jsonEncode({
-        'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
-        'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
-        'title': gifResult['title'] ?? '',
-      }),
-      keyPair!,
-      await CryptoService.getPublicKeyBase64(keyPair!),
-    );
-    
+    final payload = jsonEncode({
+      'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
+      'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
+      'title': gifResult['title'] ?? '',
+    });
+
+    final encRecipient = await CryptoService.encrypt(payload, keyPair!, recipientKey);
+    final sharedNonce = base64Url.decode(encRecipient.nonce);
+    final myPubKey = await CryptoService.getPublicKeyBase64(keyPair!);
+    final encSender = await CryptoService.encrypt(payload, keyPair!, myPubKey, nonce: sharedNonce);
+
     final msg = await _api.sendMessage(
       conversationId: conversationId,
       recipientCiphertext: encRecipient.ciphertext,
@@ -213,11 +192,7 @@ class ChatProvider extends ChangeNotifier {
       nonce: encRecipient.nonce,
       type: 'GIF',
     );
-    msg.plaintext = jsonEncode({
-      'gifUrl': gifResult['file']?['md']?['gif']?['url'] ?? '',
-      'tinyUrl': gifResult['file']?['xs']?['gif']?['url'] ?? '',
-      'title': gifResult['title'] ?? '',
-    });
+    msg.plaintext = payload;
     _appendMessage(conversationId, msg);
     return msg;
   }
@@ -231,20 +206,12 @@ class ChatProvider extends ChangeNotifier {
     final recipientKey = await _getPublicKey(recipientId);
     if (recipientKey == null || keyPair == null) return null;
 
-    // Encrypt for recipient
-    final encRecipient = await CryptoService.encrypt(
-      jsonEncode(attachment),
-      keyPair!,
-      recipientKey,
-    );
-    
-    // Encrypt for sender (my own public key)
-    final encSender = await CryptoService.encrypt(
-      jsonEncode(attachment),
-      keyPair!,
-      await CryptoService.getPublicKeyBase64(keyPair!),
-    );
-    
+    final payload = jsonEncode(attachment);
+    final encRecipient = await CryptoService.encrypt(payload, keyPair!, recipientKey);
+    final sharedNonce = base64Url.decode(encRecipient.nonce);
+    final myPubKey = await CryptoService.getPublicKeyBase64(keyPair!);
+    final encSender = await CryptoService.encrypt(payload, keyPair!, myPubKey, nonce: sharedNonce);
+
     final msg = await _api.sendMessage(
       conversationId: conversationId,
       recipientCiphertext: encRecipient.ciphertext,
@@ -252,7 +219,7 @@ class ChatProvider extends ChangeNotifier {
       nonce: encRecipient.nonce,
       type: type,
     );
-    msg.plaintext = jsonEncode(attachment);
+    msg.plaintext = payload;
     _appendMessage(conversationId, msg);
     return msg;
   }
@@ -292,127 +259,28 @@ class ChatProvider extends ChangeNotifier {
   Future<void> _decryptAll(List<ZippMessage> msgs) async {
     if (keyPair == null) return;
     for (final msg in msgs) {
-      final recipientKey = await _getPublicKey(msg.senderId);
-      if (recipientKey == null) continue;
-      // Only decrypt if not already decrypted
-      if (msg.plaintext == null) {
-        final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, recipientKey);
-        if (plain != null) {
-          msg.plaintext = plain;
-        } else {
-          // Try sender decryption for own messages
-          final senderKey = await _getPublicKey(msg.senderId);
-          if (senderKey != null) {
-            final senderPlain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
-            if (senderPlain != null) {
-              msg.plaintext = senderPlain;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  Future<String?> decryptMessage(ZippMessage msg) async {
-    if (msg.plaintext != null) return msg.plaintext;
-    if (keyPair == null) return null;
-    
-    // Try to decrypt with recipient's key first (for messages from others)
-    final recipientKey = await _getPublicKey(msg.senderId);
-    if (recipientKey != null) {
-      print('[ChatProvider] Trying recipient decryption for message from ${msg.senderId}');
-      final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, recipientKey);
+      if (msg.plaintext != null) continue;
+      final senderKey = await _getPublicKey(msg.senderId);
+      if (senderKey == null) continue;
+      // For received messages: decrypt recipientCiphertext using sender's public key.
+      // For own messages: this will fail (wrong shared secret), then fall through to
+      // decryptForSender which uses our own public key on the senderCiphertext copy.
+      final plain = await CryptoService.decrypt(
+          msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
       if (plain != null) {
         msg.plaintext = plain;
-        return plain;
+      } else {
+        final senderPlain = await CryptoService.decryptForSender(
+            msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
+        if (senderPlain != null) msg.plaintext = senderPlain;
       }
-    }
-    
-    // If that fails, try decrypting with sender's key (for own messages)
-    final senderKey = await _getPublicKey(msg.senderId);
-    if (senderKey != null) {
-      print('[ChatProvider] Trying sender decryption for own message from ${msg.senderId}');
-      final plain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
-      if (plain != null) {
-        msg.plaintext = plain;
-        return plain;
-      }
-    }
-    
-    return null;
-  }
-  
-  // Decrypt with retry - keeps trying until message is decrypted
-  Future<void> _decryptAllWithRetry(List<ZippMessage> msgs) async {
-    print('[ChatProvider] _decryptAllWithRetry called with ${msgs.length} messages');
-    print('[ChatProvider] Current keyPair: ${keyPair != null ? "present" : "null"}');
-    
-    // Poll until all messages are decrypted or keyPair becomes unavailable
-    int attempt = 0;
-    const maxAttempts = 1000; // Safety limit
-    
-    while (keyPair != null) {
-      attempt++;
-      if (attempt > maxAttempts) {
-        print('[ChatProvider] Stopping retry loop after $maxAttempts attempts');
-        break;
-      }
-      
-      bool allDecrypted = true;
-      int decryptedCount = 0;
-      
-      for (final msg in msgs) {
-        if (msg.plaintext == null) {
-          final senderKey = await _getPublicKey(msg.senderId);
-          print('[ChatProvider] [Attempt $attempt] Decrypting message from ${msg.senderId}');
-          if (senderKey != null) {
-            // Try recipient decryption
-            final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
-            if (plain != null) {
-              msg.plaintext = plain;
-              print('[ChatProvider] [Attempt $attempt] Successfully decrypted message from ${msg.senderId}');
-              decryptedCount++;
-            } else {
-              // Try sender decryption for own messages
-              final senderPlain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
-              if (senderPlain != null) {
-                msg.plaintext = senderPlain;
-                print('[ChatProvider] [Attempt $attempt] Successfully decrypted own message');
-                decryptedCount++;
-              } else {
-                print('[ChatProvider] [Attempt $attempt] FAILED to decrypt message from ${msg.senderId}');
-                allDecrypted = false;
-              }
-            }
-          }
-        } else {
-          decryptedCount++;
-        }
-      }
-      
-      print('[ChatProvider] [Attempt $attempt] Decrypted $decryptedCount/$msgs.length messages');
-      
-      // If all decrypted or keyPair is now null, break
-      if (allDecrypted || keyPair == null) {
-        print('[ChatProvider] Decryption complete: $allDecrypted, keyPair: ${keyPair != null}');
-        break;
-      }
-      // Small delay before retry to avoid tight loop
-      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
   Future<String?> _getPublicKey(String userId) async {
-    if (_pubKeyCache.containsKey(userId)) {
-      print('[ChatProvider] Using cached public key for $userId');
-      return _pubKeyCache[userId];
-    }
-    print('[ChatProvider] Fetching public key for $userId from API...');
+    if (_pubKeyCache.containsKey(userId)) return _pubKeyCache[userId];
     final key = await _api.fetchPublicKey(userId);
-    if (key != null) {
-      _pubKeyCache[userId] = key;
-      print('[ChatProvider] Cached public key for $userId');
-    }
+    if (key != null) _pubKeyCache[userId] = key;
     return key;
   }
 
@@ -442,42 +310,12 @@ class ChatProvider extends ChangeNotifier {
     final msgJson = payload['message'] as Map<String, dynamic>?;
     if (convId == null || msgJson == null) return;
 
-    print('[ChatProvider] Received new message for $convId');
-
     final msg = ZippMessage.fromJson(msgJson);
-    // Decrypt immediately when received via WebSocket
-    if (keyPair != null) {
-      final senderKey = await _getPublicKey(msg.senderId);
-      print('[ChatProvider] Decrypting WebSocket message from ${msg.senderId}');
-      if (senderKey != null) {
-        // Try recipient decryption first
-        final plain = await CryptoService.decrypt(msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
-        if (plain != null) {
-          msg.plaintext = plain;
-          print('[ChatProvider] Successfully decrypted WebSocket message from ${msg.senderId}');
-        } else {
-          // Try sender decryption for own messages
-          print('[ChatProvider] Trying sender decryption for own message');
-          final senderPlain = await CryptoService.decryptForSender(msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
-          if (senderPlain != null) {
-            msg.plaintext = senderPlain;
-            print('[ChatProvider] Successfully decrypted own message');
-          } else {
-            print('[ChatProvider] FAILED to decrypt message from ${msg.senderId}');
-          }
-        }
-      } else {
-        print('[ChatProvider] FAILED to get public key for ${msg.senderId}');
-      }
-    }
-    await _decryptAllWithRetry([msg]);
+    await _decryptAll([msg]);
 
-    // Check if message already exists in current conversation
     final existingMsgs = _messages[convId];
-    final exists = existingMsgs?.any((m) => m.id == msg.id) ?? false;
-    if (!exists) {
-      _appendMessage(convId, msg);
-    }
+    if (existingMsgs?.any((m) => m.id == msg.id) ?? false) return;
+    _appendMessage(convId, msg);
   }
 
   void _handleReaction(Map<String, dynamic> payload) {

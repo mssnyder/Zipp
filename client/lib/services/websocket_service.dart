@@ -11,20 +11,29 @@ class WebSocketService {
   StreamSubscription? _sub;
   final List<WsEventHandler> _handlers = [];
   bool _disposed = false;
+  bool _connecting = false;
   Timer? _reconnectTimer;
 
   void addListener(WsEventHandler handler) => _handlers.add(handler);
   void removeListener(WsEventHandler handler) => _handlers.remove(handler);
 
   Future<void> connect() async {
+    if (_connecting) return;
     _disposed = false;
+    _connecting = true;
     _reconnectTimer?.cancel();
-    
+
+    // Tear down any existing subscription before opening a new one
+    await _sub?.cancel();
+    _sub = null;
+    _channel?.sink.close();
+    _channel = null;
+
     // Get session cookie for authentication
     final sessionCookie = await StorageService.getSessionCookie();
-    
+
     try {
-      final wsUri = sessionCookie != null 
+      final wsUri = sessionCookie != null
           ? Uri.parse('${ZippConfig.wsUrl}?sid=$sessionCookie')
           : Uri.parse(ZippConfig.wsUrl);
       _channel = WebSocketChannel.connect(wsUri);
@@ -46,6 +55,8 @@ class WebSocketService {
       );
     } catch (_) {
       _scheduleReconnect();
+    } finally {
+      _connecting = false;
     }
   }
 
