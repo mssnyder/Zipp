@@ -18,6 +18,10 @@ class AuthProvider extends ChangeNotifier {
   /// available, e.g. after OAuth login). The UI should prompt for the password.
   bool _needsKeyRestore = false;
 
+  /// True when we have a local key pair but no server backup exists.
+  /// The UI should prompt for the password to create a backup.
+  bool _needsKeyBackup = false;
+
   /// Transient password used during login to decrypt/encrypt key backup.
   /// Cleared immediately after use.
   String? _loginPassword;
@@ -30,6 +34,7 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isAuthenticated => _user != null;
   bool get needsKeyRestore => _needsKeyRestore;
+  bool get needsKeyBackup => _needsKeyBackup;
 
   void _setLoading(bool v) { _loading = v; notifyListeners(); }
   void _setError(String? e) { _error = e; notifyListeners(); }
@@ -135,12 +140,20 @@ class AuthProvider extends ChangeNotifier {
       }
     }
 
-    // Step 4: generate new key pair only if no backup exists on the server.
-    // If a backup exists but we can't decrypt it (no password, or wrong password),
-    // leave keyPair null — never overwrite the server key with a new one.
+    // Step 4: generate new key pair only if the server has NO key data at all.
+    // If the server has a backup OR even just a public key, never overwrite —
+    // prompt the user instead.
     if (_keyPair == null) {
       if (hasServerBackup) {
         _needsKeyRestore = true;
+        _needsKeyBackup = false;
+        return;
+      }
+      if (serverPubKey != null) {
+        // Server has a public key but no backup — another device has the key.
+        // Don't generate a new one (would make old messages unreadable).
+        _needsKeyRestore = true;
+        _needsKeyBackup = false;
         return;
       }
       _keyPair = await CryptoService.generateKeyPair();
@@ -172,6 +185,15 @@ class AuthProvider extends ChangeNotifier {
         keySalt: backup.keySalt,
         keyNonce: backup.keyNonce,
       );
+      _needsKeyBackup = false;
+    }
+
+    // If we have a local key but no server backup and no password to create one,
+    // flag that the user should create a backup.
+    if (!hasServerBackup && _loginPassword == null) {
+      _needsKeyBackup = true;
+    } else {
+      _needsKeyBackup = false;
     }
   }
 
@@ -207,6 +229,28 @@ class AuthProvider extends ChangeNotifier {
           keyNonce: backup.keyNonce,
         );
       }
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Create a key backup when user has a local key but no server backup.
+  /// The user provides their password to encrypt the private key.
+  Future<bool> createKeyBackup(String password) async {
+    if (_user == null || _keyPair == null) return false;
+    try {
+      final privBytes = await _keyPair!.extractPrivateKeyBytes();
+      final backup = await CryptoService.encryptPrivateKey(privBytes, password);
+      final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
+      await _api.uploadPublicKey(
+        localPub,
+        encryptedPrivateKey: backup.encryptedPrivateKey,
+        keySalt: backup.keySalt,
+        keyNonce: backup.keyNonce,
+      );
+      _needsKeyBackup = false;
       notifyListeners();
       return true;
     } catch (_) {

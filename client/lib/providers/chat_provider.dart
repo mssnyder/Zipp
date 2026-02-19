@@ -264,7 +264,10 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _appendMessage(String convId, ZippMessage msg) {
-    _messages.putIfAbsent(convId, () => []).add(msg);
+    final msgs = _messages.putIfAbsent(convId, () => []);
+    // Dedup: if message already in list (race between HTTP response and WS), skip
+    if (msgs.any((m) => m.id == msg.id)) return;
+    msgs.add(msg);
     _bumpConversation(convId, msg);
     notifyListeners();
   }
@@ -291,6 +294,31 @@ class ChatProvider extends ChangeNotifier {
       updatedAt: msg.createdAt,
     );
     _conversations.insert(0, updated);
+  }
+
+  // ── Read receipts ────────────────────────────────────────────────────────
+
+  /// Mark the latest unread message from the other person as read.
+  /// The server only marks the specified message, so we find the newest
+  /// unread incoming message and mark it.
+  Future<void> markLastMessageRead(String convId, String myId) async {
+    final msgs = _messages[convId];
+    if (msgs == null || msgs.isEmpty) return;
+
+    // Find the last message from someone else that hasn't been read
+    ZippMessage? lastUnread;
+    for (int i = msgs.length - 1; i >= 0; i--) {
+      final m = msgs[i];
+      if (m.senderId != myId && !m.isRead) {
+        lastUnread = m;
+        break;
+      }
+    }
+    if (lastUnread == null) return;
+
+    try {
+      await _api.markRead(convId, lastUnread.id);
+    } catch (_) {}
   }
 
   // ── Reactions ─────────────────────────────────────────────────────────────
@@ -425,11 +453,25 @@ class ChatProvider extends ChangeNotifier {
 
     final msgs = _messages[convId];
     if (msgs == null) return;
-    final idx = msgs.indexWhere((m) => m.id == msgId);
-    if (idx >= 0) {
-      msgs[idx] = msgs[idx].copyWith(readAt: readAt != null ? DateTime.parse(readAt) : null);
-      notifyListeners();
+
+    // Find the target message to know the cutoff
+    final targetIdx = msgs.indexWhere((m) => m.id == msgId);
+    if (targetIdx < 0) return;
+
+    final parsedReadAt = readAt != null ? DateTime.parse(readAt) : null;
+    final targetSenderId = msgs[targetIdx].senderId;
+    bool changed = false;
+
+    // Mark all messages from the same sender up to and including this one
+    for (int i = 0; i <= targetIdx; i++) {
+      final m = msgs[i];
+      if (m.senderId == targetSenderId && !m.isRead) {
+        msgs[i] = m.copyWith(readAt: parsedReadAt);
+        changed = true;
+      }
     }
+
+    if (changed) notifyListeners();
   }
 
   @override

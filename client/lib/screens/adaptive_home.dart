@@ -178,18 +178,19 @@ class _ConversationList extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
 
     if (chat.convsLoading) return const Center(child: CircularProgressIndicator());
-    if (chat.conversations.isEmpty && !auth.needsKeyRestore) return _empty(context);
+    final showBanner = auth.needsKeyRestore || auth.needsKeyBackup;
+    if (chat.conversations.isEmpty && !showBanner) return _empty(context);
 
     return RefreshIndicator(
       onRefresh: chat.loadConversations,
       child: ListView.builder(
-        itemCount: chat.conversations.length + (auth.needsKeyRestore ? 1 : 0),
+        itemCount: chat.conversations.length + (showBanner ? 1 : 0),
         itemBuilder: (ctx, i) {
-          // Key restore banner at the top
-          if (auth.needsKeyRestore && i == 0) {
+          // Key restore/backup banner at the top
+          if (showBanner && i == 0) {
             return _KeyRestoreBanner(auth: auth, chat: chat);
           }
-          final convIdx = auth.needsKeyRestore ? i - 1 : i;
+          final convIdx = showBanner ? i - 1 : i;
           final conv = chat.conversations[convIdx];
           final isSelected = desktop && chat.selectedConvId == conv.id;
           return Column(
@@ -240,6 +241,13 @@ class _KeyRestoreBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isBackup = auth.needsKeyBackup && !auth.needsKeyRestore;
+    final title = isBackup ? 'Back up encryption key' : 'Encryption key needed';
+    final subtitle = isBackup
+        ? 'Enter your password to back up your key for other devices.'
+        : 'Enter your password to decrypt messages.';
+    final buttonLabel = isBackup ? 'Back up' : 'Unlock';
+
     return Container(
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(14),
@@ -257,12 +265,12 @@ class _KeyRestoreBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Encryption key needed',
+                  title,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Enter your password to decrypt messages.',
+                  subtitle,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -274,7 +282,7 @@ class _KeyRestoreBanner extends StatelessWidget {
             style: FilledButton.styleFrom(
               backgroundColor: ZippTheme.accent1,
             ),
-            child: const Text('Unlock'),
+            child: Text(buttonLabel),
           ),
         ],
       ),
@@ -285,17 +293,23 @@ class _KeyRestoreBanner extends StatelessWidget {
     final controller = TextEditingController();
     var loading = false;
     String? errorMsg;
+    final isBackup = auth.needsKeyBackup && !auth.needsKeyRestore;
+    final dialogTitle = isBackup ? 'Back up encryption key' : 'Unlock encryption';
+    final dialogDesc = isBackup
+        ? 'Enter your account password to back up your encryption key for use on other devices.'
+        : 'Enter your account password to restore your encryption key.';
+    final buttonText = isBackup ? 'Back up' : 'Unlock';
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: ZippTheme.surface,
-          title: const Text('Unlock encryption'),
+          title: Text(dialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Enter your account password to restore your encryption key.'),
+              Text(dialogDesc),
               const SizedBox(height: 16),
               TextField(
                 controller: controller,
@@ -304,7 +318,7 @@ class _KeyRestoreBanner extends StatelessWidget {
                   labelText: 'Password',
                   errorText: errorMsg,
                 ),
-                onSubmitted: loading ? null : (_) => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e),
+                onSubmitted: loading ? null : (_) => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e, isBackup),
               ),
             ],
           ),
@@ -314,8 +328,8 @@ class _KeyRestoreBanner extends StatelessWidget {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: loading ? null : () => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e),
-              child: loading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Unlock'),
+              onPressed: loading ? null : () => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e, isBackup),
+              child: loading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Text(buttonText),
             ),
           ],
         ),
@@ -329,13 +343,19 @@ class _KeyRestoreBanner extends StatelessWidget {
     void Function(void Function()) setState,
     void Function(bool) setLoading,
     void Function(String?) setError,
+    bool isBackup,
   ) async {
     final password = controller.text.trim();
     if (password.isEmpty) return;
 
     setState(() { setLoading(true); setError(null); });
 
-    final ok = await auth.restoreKeyFromBackup(password);
+    bool ok;
+    if (isBackup) {
+      ok = await auth.createKeyBackup(password);
+    } else {
+      ok = await auth.restoreKeyFromBackup(password);
+    }
     if (!ctx.mounted) return;
 
     if (ok) {
@@ -343,7 +363,10 @@ class _KeyRestoreBanner extends StatelessWidget {
       chat.keyPair = auth.keyPair;
       chat.loadConversations();
     } else {
-      setState(() { setLoading(false); setError('Wrong password or restore failed.'); });
+      final errorText = isBackup
+          ? 'Failed to create backup. Check your password.'
+          : 'Wrong password or restore failed.';
+      setState(() { setLoading(false); setError(errorText); });
     }
   }
 }

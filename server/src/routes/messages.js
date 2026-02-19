@@ -187,15 +187,23 @@ export default async (app, prisma) => {
       });
       if (!msg || msg.senderId === req.auth.user.id) return { ok: true };
 
-      const updated = await prisma.message.update({
-        where: { id: req.params.msgId },
-        data: { readAt: new Date() },
+      const now = new Date();
+
+      // Mark all unread messages from this sender up to (and including) the specified one
+      await prisma.message.updateMany({
+        where: {
+          conversationId: req.params.id,
+          senderId: msg.senderId,
+          readAt: null,
+          createdAt: { lte: msg.createdAt },
+        },
+        data: { readAt: now },
       });
 
       app.broadcast([msg.senderId], "message:read", {
         conversationId: req.params.id,
         messageId: msg.id,
-        readAt: updated.readAt,
+        readAt: now,
       });
 
       return { ok: true };

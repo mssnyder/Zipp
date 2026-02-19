@@ -44,11 +44,22 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatProvider>().loadMessages(widget.conversationId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final chat = context.read<ChatProvider>();
+      await chat.loadMessages(widget.conversationId);
+      _markRead();
     });
 
     _scrollCtrl.addListener(_onScroll);
+  }
+
+  /// Mark latest incoming message as read.
+  void _markRead() {
+    final auth = context.read<AuthProvider>();
+    final chat = context.read<ChatProvider>();
+    final myId = auth.user?.id ?? '';
+    if (myId.isEmpty) return;
+    chat.markLastMessageRead(widget.conversationId, myId);
   }
 
   void _onScroll() {
@@ -184,6 +195,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  int _lastMsgCount = 0;
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -191,6 +204,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final messages = chat.messagesFor(widget.conversationId);
     final typing = chat.typingIn(widget.conversationId);
     final myId = auth.user?.id ?? '';
+
+    // Mark as read when new messages arrive from the other person
+    if (messages.length > _lastMsgCount && messages.isNotEmpty) {
+      _lastMsgCount = messages.length;
+      final lastMsg = messages.last;
+      if (lastMsg.senderId != myId) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+      }
+    }
 
     return Scaffold(
       backgroundColor: ZippTheme.background,
