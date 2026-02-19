@@ -58,7 +58,9 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> _check(Response r) async {
-    final data = r.data as Map<String, dynamic>? ?? {};
+    final data = r.data is Map<String, dynamic>
+        ? r.data as Map<String, dynamic>
+        : <String, dynamic>{};
     if (r.statusCode != null && r.statusCode! >= 400) {
       throw ApiException(r.statusCode!, data['error']?.toString() ?? 'Request failed');
     }
@@ -100,7 +102,7 @@ class ApiService {
 
   /// Start native desktop Google sign-in flow.
   Future<Map<String, String>> nativeLoginStart() async {
-    final r = await _dio.post('/api/auth/native-login-start');
+    final r = await _dio.post('/api/auth/native-login-start', data: {});
     final data = await _check(r);
     return {
       'token': data['token'] as String,
