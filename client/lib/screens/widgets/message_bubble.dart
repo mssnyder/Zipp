@@ -175,6 +175,22 @@ class _MessageBubbleState extends State<MessageBubble> {
     _highlightedIndex = -1;
   }
 
+  Widget _buildHoverButtons() => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _HoverBtn(
+            icon: Icons.reply_outlined,
+            tooltip: 'Reply',
+            onTap: widget.onReply,
+          ),
+          _HoverBtn(
+            icon: Icons.emoji_emotions_outlined,
+            tooltip: 'React',
+            onTap: () => _showReactionOverlay(),
+          ),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
     final message = widget.message;
@@ -203,75 +219,73 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-            child: Align(
-              alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.78,
-                    ),
-                    child: Column(
-                      key: _bubbleKey,
-                      crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                      children: [
-                        _BubbleBody(message: message, isMine: isMine),
-                        if (message.reactions.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: ReactionBar(
-                              reactions: message.reactions,
-                              myUserId: context.read<AuthProvider>().user?.id ?? '',
-                            ),
-                          ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                DateFormat.jm().format(message.createdAt.toLocal()),
-                                style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
-                              ),
-                              if (isMine) ...[
-                                const SizedBox(width: 4),
-                                Icon(
-                                  message.isRead ? Icons.done_all : Icons.done,
-                                  size: 12,
-                                  color: message.isRead ? ZippTheme.accent2 : ZippTheme.textSecondary,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
+            child: Row(
+              mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_isDesktop && !isMine) ...[
+                  IgnorePointer(
+                    ignoring: !_hovering,
+                    child: AnimatedOpacity(
+                      opacity: _hovering ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: _buildHoverButtons(),
                     ),
                   ),
-                  if (_hovering && _isDesktop)
-                    Positioned(
-                      top: 0,
-                      // Place on the opposite side of the bubble
-                      left: isMine ? -60 : null,
-                      right: isMine ? null : -60,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _HoverBtn(
-                            icon: Icons.reply_outlined,
-                            tooltip: 'Reply',
-                            onTap: widget.onReply,
-                          ),
-                          _HoverBtn(
-                            icon: Icons.emoji_emotions_outlined,
-                            tooltip: 'React',
-                            onTap: () => _showReactionOverlay(),
-                          ),
-                        ],
-                      ),
-                    ),
+                  const SizedBox(width: 4),
                 ],
-              ),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.78,
+                  ),
+                  child: Column(
+                    key: _bubbleKey,
+                    crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                    children: [
+                      _BubbleBody(message: message, isMine: isMine),
+                      if (message.reactions.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: ReactionBar(
+                            reactions: message.reactions,
+                            myUserId: context.read<AuthProvider>().user?.id ?? '',
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              DateFormat.jm().format(message.createdAt.toLocal()),
+                              style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
+                            ),
+                            if (isMine) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                message.isRead ? Icons.done_all : Icons.done,
+                                size: 12,
+                                color: message.isRead ? ZippTheme.accent2 : ZippTheme.textSecondary,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isDesktop && isMine) ...[
+                  const SizedBox(width: 4),
+                  IgnorePointer(
+                    ignoring: !_hovering,
+                    child: AnimatedOpacity(
+                      opacity: _hovering ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: _buildHoverButtons(),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
