@@ -91,6 +91,8 @@ class ChatProvider extends ChangeNotifier {
   /// Decrypt last-message previews for the conversation list.
   Future<void> _decryptPreviews() async {
     if (keyPair == null) return;
+    final myPubKey = await CryptoService.getPublicKeyBase64(keyPair!);
+
     for (final conv in _conversations) {
       final lm = conv.lastMessage;
       if (lm == null || lm.plaintext != null) continue;
@@ -107,9 +109,9 @@ class ChatProvider extends ChangeNotifier {
       if (plain != null) {
         lm.plaintext = plain;
       } else {
-        // Try sender copy (works if I sent it)
+        // Try sender copy (works if I sent it) – use local public key
         final senderPlain = await CryptoService.decryptForSender(
-          lm.senderCiphertext!, lm.nonce!, keyPair!, senderKey,
+          lm.senderCiphertext!, lm.nonce!, keyPair!, myPubKey,
         );
         if (senderPlain != null) lm.plaintext = senderPlain;
       }
@@ -341,20 +343,25 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> _decryptAll(List<ZippMessage> msgs) async {
     if (keyPair == null) return;
+    // Extract our own public key from the local key pair – this is used for
+    // decryptForSender so we always use the key matching our private key,
+    // regardless of what the server returns.
+    final myPubKey = await CryptoService.getPublicKeyBase64(keyPair!);
+
     for (final msg in msgs) {
       if (msg.plaintext != null) continue;
       final senderKey = await _getPublicKey(msg.senderId);
       if (senderKey == null) continue;
       // For received messages: decrypt recipientCiphertext using sender's public key.
       // For own messages: this will fail (wrong shared secret), then fall through to
-      // decryptForSender which uses our own public key on the senderCiphertext copy.
+      // decryptForSender which uses our own local public key on the senderCiphertext copy.
       final plain = await CryptoService.decrypt(
           msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
       if (plain != null) {
         msg.plaintext = plain;
       } else {
         final senderPlain = await CryptoService.decryptForSender(
-            msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
+            msg.senderCiphertext, msg.nonce, keyPair!, myPubKey);
         if (senderPlain != null) msg.plaintext = senderPlain;
       }
 
@@ -369,7 +376,7 @@ class ChatProvider extends ChangeNotifier {
             reply.plaintext = rPlain;
           } else {
             final rSender = await CryptoService.decryptForSender(
-                reply.senderCiphertext, reply.nonce, keyPair!, replyKey);
+                reply.senderCiphertext, reply.nonce, keyPair!, myPubKey);
             if (rSender != null) reply.plaintext = rSender;
           }
         }

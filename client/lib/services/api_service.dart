@@ -98,6 +98,28 @@ class ApiService {
     await _check(r);
   }
 
+  /// Start native desktop Google sign-in flow.
+  Future<Map<String, String>> nativeLoginStart() async {
+    final r = await _dio.post('/api/auth/native-login-start');
+    final data = await _check(r);
+    return {
+      'token': data['token'] as String,
+      'url': data['url'] as String,
+    };
+  }
+
+  /// Poll for native Google sign-in completion.
+  /// Returns user on success, null if still pending, throws on expiry.
+  Future<ZippUser?> nativeLoginPoll(String token) async {
+    final r = await _dio.get('/api/auth/native-login-poll', queryParameters: {'token': token});
+    if (r.statusCode == 202) return null;
+    final data = await _check(r);
+    if (data.containsKey('user')) {
+      return ZippUser.fromJson(data['user'] as Map<String, dynamic>);
+    }
+    return null;
+  }
+
   // ── Me ────────────────────────────────────────────────────────────────────
 
   Future<ZippUser> getMe() async {

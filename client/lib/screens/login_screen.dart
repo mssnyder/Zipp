@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/constants.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
+import '../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showRegister;
@@ -24,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _displayNameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
+  bool _waitingForGoogle = false;
   String? _successMsg;
 
   @override
@@ -70,19 +72,56 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    final uri = Uri.parse('${ZippConfig.serverUrl}/connect/google');
     if (kIsWeb) {
-      // On web the page navigates away → OAuth → redirects back → app reloads logged in
+      final uri = Uri.parse('${ZippConfig.serverUrl}/connect/google');
       await launchUrl(uri, mode: LaunchMode.platformDefault, webOnlyWindowName: '_self');
     } else {
-      // On desktop the browser handles it but the app's cookie jar won't receive the cookie
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Google sign-in is fully supported in the web app. On desktop, use email/password.'),
-          duration: Duration(seconds: 5),
-        ));
+      await _nativeGoogleSignIn();
+    }
+  }
+
+  Future<void> _nativeGoogleSignIn() async {
+    final api = context.read<ApiService>();
+    final auth = context.read<AuthProvider>();
+
+    setState(() => _waitingForGoogle = true);
+    try {
+      final result = await api.nativeLoginStart();
+      await launchUrl(Uri.parse(result['url']!), mode: LaunchMode.externalApplication);
+
+      // Poll for completion (every 2s, up to 5 minutes)
+      for (int i = 0; i < 150; i++) {
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted || !_waitingForGoogle) return;
+
+        try {
+          final user = await api.nativeLoginPoll(result['token']!);
+          if (user != null) {
+            // Session cookie is now in the cookie jar from the poll response.
+            // Restore full session (loads user, ensures key pair, etc.)
+            await auth.tryRestoreSession();
+            if (mounted) context.go('/');
+            return;
+          }
+        } on ApiException catch (e) {
+          if (e.statusCode == 410) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Login timed out. Please try again.')),
+              );
+            }
+            return;
+          }
+        }
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google sign-in failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _waitingForGoogle = false);
     }
   }
 
@@ -258,29 +297,45 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       height: 50,
                       child: OutlinedButton(
-                        onPressed: _signInWithGoogle,
+                        onPressed: _waitingForGoogle ? null : _signInWithGoogle,
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: ZippTheme.border),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'G',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF4285F4),
+                        child: _waitingForGoogle
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Text(
+                                    'Waiting for Google sign-in...',
+                                    style: TextStyle(color: ZippTheme.textSecondary, fontSize: 14),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'G',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF4285F4),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Text(
+                                    'Continue with Google',
+                                    style: TextStyle(color: ZippTheme.textPrimary, fontSize: 15),
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Text(
-                              'Continue with Google',
-                              style: TextStyle(color: ZippTheme.textPrimary, fontSize: 15),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                     const SizedBox(height: 8),

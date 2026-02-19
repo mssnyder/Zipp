@@ -5,6 +5,18 @@ import { getGoogleProfile } from "../auth/google.js";
 import { sendVerificationEmail } from "../auth/mailer.js";
 import { RATE_LIMITS, VERIFY_TOKEN_TTL_MS } from "../constants.js";
 
+// In-memory store for native desktop OAuth login tokens: token → { userId, expiresAt }
+const NLT_TTL_MS = 5 * 60 * 1000;
+const nativeLoginTokens = new Map();
+
+function pruneExpiredNLTs() {
+  const now = Date.now();
+  for (const [token, entry] of nativeLoginTokens) {
+    if (entry.expiresAt < now) nativeLoginTokens.delete(token);
+  }
+}
+setInterval(pruneExpiredNLTs, 60_000);
+
 const registerSchema = yup.object({
   email: yup.string().email().required(),
   username: yup
@@ -216,6 +228,73 @@ export default (app, prisma) => {
     return { ok: true };
   });
 
+  // ── Native desktop Google sign-in (token-based bridge) ─────────────────
+
+  // POST /api/auth/native-login-start — create a pending login token
+  app.route({
+    method: "POST",
+    url: "/api/auth/native-login-start",
+    config: { rateLimit: { max: 10, timeWindow: "5 minutes" } },
+    handler: async (req, reply) => {
+      pruneExpiredNLTs();
+      const token = randomBytes(32).toString("hex");
+      nativeLoginTokens.set(token, { userId: null, expiresAt: Date.now() + NLT_TTL_MS });
+      return {
+        token,
+        url: `${process.env.SERVER_URL}/api/auth/native-start-google?t=${token}`,
+      };
+    },
+  });
+
+  // GET /api/auth/native-start-google — browser entry point, stores token in session then redirects to OAuth
+  app.get("/api/auth/native-start-google", async (req, reply) => {
+    const { t: token } = req.query;
+    if (!token) return reply.code(400).send({ error: "Missing token" });
+
+    const entry = nativeLoginTokens.get(token);
+    if (!entry || entry.expiresAt < Date.now()) {
+      nativeLoginTokens.delete(token);
+      return reply.type("text/html").send(
+        '<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui"><div><h2>Link expired</h2><p>Please try again from the app.</p></div></body></html>'
+      );
+    }
+
+    req.session.nlt = token;
+    return reply.redirect("/connect/google");
+  });
+
+  // GET /api/auth/native-login-poll — native app polls this until OAuth completes
+  app.route({
+    method: "GET",
+    url: "/api/auth/native-login-poll",
+    config: { rateLimit: { max: 200, timeWindow: "5 minutes" } },
+    handler: async (req, reply) => {
+      const { token } = req.query;
+      if (!token) return reply.code(400).send({ error: "Missing token" });
+
+      const entry = nativeLoginTokens.get(token);
+      if (!entry || entry.expiresAt < Date.now()) {
+        nativeLoginTokens.delete(token);
+        return reply.code(410).send({ error: "Token expired or not found" });
+      }
+      if (!entry.userId) {
+        return reply.code(202).send({ status: "pending" });
+      }
+
+      // Success — create session for the native app
+      nativeLoginTokens.delete(token);
+      const user = await prisma.user.findUnique({
+        where: { id: entry.userId },
+        include: { accounts: true },
+      });
+      if (!user) return reply.code(404).send({ error: "User not found" });
+
+      req.regenerateSession();
+      req.session.userId = entry.userId;
+      return { user: formatUser(user) };
+    },
+  });
+
   // Google OAuth callback
   app.get("/api/oauth/google", async (req, reply) => {
     // isLink is true for both the old grant.dynamic.link flow and the new linkUserId token flow
@@ -231,7 +310,11 @@ export default (app, prisma) => {
     }
   });
 
+  const NLT_SUCCESS_HTML = `<!DOCTYPE html><html><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:#1a1a2e;color:#e0e0e0"><div style="text-align:center"><h2 style="color:#6ee7b7">Login successful</h2><p>You can close this tab and return to the app.</p></div></body></html>`;
+
   async function handleGoogleLogin({ sub, email, firstName, lastName }, req, reply) {
+    const nlt = req.session?.nlt;
+
     const account = await prisma.account.findUnique({
       where: { provider_providerAccountId: { provider: "google", providerAccountId: sub } },
       include: { user: true },
@@ -240,14 +323,26 @@ export default (app, prisma) => {
     if (!account) {
       const existingUser = await prisma.user.findUnique({ where: { email } });
       if (existingUser) {
+        if (nlt) nativeLoginTokens.delete(nlt);
         return reply.redirect(`${process.env.FRONTEND_URL}/login?error=email_exists`);
       }
       if (process.env.ALLOW_SIGNUPS !== "true") {
+        if (nlt) nativeLoginTokens.delete(nlt);
         return reply.code(403).send({ error: "Signups are disabled" });
       }
 
+      // nlt is already in req.session — it will persist through to complete-profile
       req.session.oauthPending = { provider: "google", providerAccountId: sub, email, firstName, lastName };
       return reply.redirect(`${process.env.FRONTEND_URL}/complete-profile`);
+    }
+
+    // Existing user — native login: store userId against token, show success page
+    if (nlt) {
+      const entry = nativeLoginTokens.get(nlt);
+      if (entry && entry.expiresAt > Date.now()) {
+        entry.userId = account.userId;
+      }
+      return reply.type("text/html").send(NLT_SUCCESS_HTML);
     }
 
     req.regenerateSession();
@@ -320,9 +415,20 @@ export default (app, prisma) => {
         return u;
       });
 
+      // Save nlt before regeneration (native desktop login flow)
+      const nlt = req.session.nlt;
       delete req.session.oauthPending;
       req.regenerateSession();
       req.session.userId = user.id;
+
+      // Associate user with the native login token so the desktop app can pick it up
+      if (nlt) {
+        const entry = nativeLoginTokens.get(nlt);
+        if (entry && entry.expiresAt > Date.now()) {
+          entry.userId = user.id;
+        }
+      }
+
       return { user: formatUser(user) };
     },
   });
