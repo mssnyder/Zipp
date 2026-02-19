@@ -223,7 +223,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_isDesktop && !isMine) ...[
+                if (_isDesktop && isMine) ...[
                   IgnorePointer(
                     ignoring: !_hovering,
                     child: AnimatedOpacity(
@@ -274,7 +274,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ],
                   ),
                 ),
-                if (_isDesktop && isMine) ...[
+                if (_isDesktop && !isMine) ...[
                   const SizedBox(width: 4),
                   IgnorePointer(
                     ignoring: !_hovering,
