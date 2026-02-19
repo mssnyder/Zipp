@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
@@ -11,18 +12,22 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import 'reaction_bar.dart';
 
+const _quickEmojis = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
+
 class MessageBubble extends StatefulWidget {
   final ZippMessage message;
   final bool isMine;
-  final VoidCallback? onLongPress;
-  final VoidCallback? onSwipeReply;
+  final void Function(String emoji)? onReact;
+  final VoidCallback? onReply;
+  final VoidCallback? onCopy;
 
   const MessageBubble({
     super.key,
     required this.message,
     required this.isMine,
-    this.onLongPress,
-    this.onSwipeReply,
+    this.onReact,
+    this.onReply,
+    this.onCopy,
   });
 
   @override
@@ -31,13 +36,144 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble> {
   bool _hovering = false;
+  final _bubbleKey = GlobalKey();
+  OverlayEntry? _overlayEntry;
+  int _highlightedIndex = -1;
 
-  // Show hover actions on desktop/web; on mobile long-press handles it.
   bool get _isDesktop =>
       kIsWeb ||
       defaultTargetPlatform == TargetPlatform.linux ||
       defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.macOS;
+
+  @override
+  void dispose() {
+    _removeOverlay();
+    super.dispose();
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _showReactionOverlay([Offset? longPressPos]) {
+    _removeOverlay();
+    HapticFeedback.lightImpact();
+
+    final renderBox = _bubbleKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final bubblePos = renderBox.localToGlobal(Offset.zero);
+    final bubbleSize = renderBox.size;
+    final screenSize = MediaQuery.of(context).size;
+    final isMine = widget.isMine;
+
+    // Position the overlay above the bubble, or below if too close to the top
+    const overlayHeight = 52.0;
+    const overlayPadding = 8.0;
+    final showAbove = bubblePos.dy > overlayHeight + overlayPadding + 50;
+
+    final overlayTop = showAbove
+        ? bubblePos.dy - overlayHeight - overlayPadding
+        : bubblePos.dy + bubbleSize.height + overlayPadding;
+
+    // Align horizontally with the message
+    final overlayLeft = isMine
+        ? (bubblePos.dx + bubbleSize.width - 280).clamp(8.0, screenSize.width - 288.0)
+        : bubblePos.dx.clamp(8.0, screenSize.width - 288.0);
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) => _ReactionOverlay(
+        top: overlayTop,
+        left: overlayLeft,
+        highlightedIndex: _highlightedIndex,
+        onReact: (emoji) {
+          _removeOverlay();
+          widget.onReact?.call(emoji);
+          HapticFeedback.lightImpact();
+        },
+        onReply: () {
+          _removeOverlay();
+          widget.onReply?.call();
+        },
+        onCopy: widget.message.plaintext != null
+            ? () {
+                _removeOverlay();
+                widget.onCopy?.call();
+              }
+            : null,
+        onDismiss: _removeOverlay,
+      ),
+    );
+
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _onLongPressStart(LongPressStartDetails details) {
+    _highlightedIndex = -1;
+    _showReactionOverlay(details.globalPosition);
+  }
+
+  void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    if (_overlayEntry == null) return;
+
+    final renderBox = _bubbleKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final bubblePos = renderBox.localToGlobal(Offset.zero);
+    final bubbleSize = renderBox.size;
+    final isMine = widget.isMine;
+    final screenSize = MediaQuery.of(context).size;
+
+    const overlayHeight = 52.0;
+    const overlayPadding = 8.0;
+    final showAbove = bubblePos.dy > overlayHeight + overlayPadding + 50;
+
+    final overlayTop = showAbove
+        ? bubblePos.dy - overlayHeight - overlayPadding
+        : bubblePos.dy + bubbleSize.height + overlayPadding;
+
+    final overlayLeft = isMine
+        ? (bubblePos.dx + bubbleSize.width - 280).clamp(8.0, screenSize.width - 288.0)
+        : bubblePos.dx.clamp(8.0, screenSize.width - 288.0);
+
+    // Calculate which emoji the finger is closest to
+    final fingerPos = details.globalPosition;
+    const emojiSpacing = 44.0;
+    const emojiStartX = 8.0;
+    final emojiCenterY = overlayTop + overlayHeight / 2;
+
+    int closest = -1;
+    double closestDist = double.infinity;
+
+    for (int i = 0; i < _quickEmojis.length; i++) {
+      final emojiCenterX = overlayLeft + emojiStartX + (i * emojiSpacing) + emojiSpacing / 2;
+      final dx = fingerPos.dx - emojiCenterX;
+      final dy = fingerPos.dy - emojiCenterY;
+      final dist = dx * dx + dy * dy;
+      if (dist < closestDist && dist < 80 * 80) {
+        closest = i;
+        closestDist = dist;
+      }
+    }
+
+    if (closest != _highlightedIndex) {
+      _highlightedIndex = closest;
+      _overlayEntry?.markNeedsBuild();
+      if (closest >= 0) HapticFeedback.selectionClick();
+    }
+  }
+
+  void _onLongPressEnd(LongPressEndDetails details) {
+    if (_highlightedIndex >= 0 && _highlightedIndex < _quickEmojis.length) {
+      final emoji = _quickEmojis[_highlightedIndex];
+      _removeOverlay();
+      widget.onReact?.call(emoji);
+      HapticFeedback.lightImpact();
+    }
+    _highlightedIndex = -1;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,12 +187,12 @@ class _MessageBubbleState extends State<MessageBubble> {
               _HoverBtn(
                 icon: Icons.reply_outlined,
                 tooltip: 'Reply',
-                onTap: widget.onSwipeReply,
+                onTap: widget.onReply,
               ),
               _HoverBtn(
                 icon: Icons.emoji_emotions_outlined,
                 tooltip: 'React',
-                onTap: widget.onLongPress,
+                onTap: () => _showReactionOverlay(),
               ),
             ],
           )
@@ -66,18 +202,20 @@ class _MessageBubbleState extends State<MessageBubble> {
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
-        onLongPress: widget.onLongPress,
+        onLongPressStart: _isDesktop ? null : _onLongPressStart,
+        onLongPressMoveUpdate: _isDesktop ? null : _onLongPressMoveUpdate,
+        onLongPressEnd: _isDesktop ? null : _onLongPressEnd,
         child: Dismissible(
           key: ValueKey('dismiss-${message.id}'),
-          direction: DismissDirection.startToEnd,
+          direction: isMine ? DismissDirection.endToStart : DismissDirection.startToEnd,
           confirmDismiss: (_) async {
-            widget.onSwipeReply?.call();
-            return false; // Don't actually dismiss
+            widget.onReply?.call();
+            return false;
           },
           background: Align(
-            alignment: Alignment.centerLeft,
+            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
             child: Padding(
-              padding: const EdgeInsets.only(left: 16),
+              padding: EdgeInsets.only(left: isMine ? 0 : 16, right: isMine ? 16 : 0),
               child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
             ),
           ),
@@ -93,6 +231,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     maxWidth: MediaQuery.of(context).size.width * 0.78,
                   ),
                   child: Column(
+                    key: _bubbleKey,
                     crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
                       _BubbleBody(message: message, isMine: isMine),
@@ -137,6 +276,113 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 }
 
+// ── Inline reaction overlay ──────────────────────────────────────────────────
+
+class _ReactionOverlay extends StatelessWidget {
+  final double top;
+  final double left;
+  final int highlightedIndex;
+  final void Function(String emoji) onReact;
+  final VoidCallback onReply;
+  final VoidCallback? onCopy;
+  final VoidCallback onDismiss;
+
+  const _ReactionOverlay({
+    required this.top,
+    required this.left,
+    required this.highlightedIndex,
+    required this.onReact,
+    required this.onReply,
+    this.onCopy,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Tap outside to dismiss
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onDismiss,
+            child: const SizedBox.expand(),
+          ),
+        ),
+        Positioned(
+          top: top,
+          left: left,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: ZippTheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(100),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (int i = 0; i < _quickEmojis.length; i++)
+                    GestureDetector(
+                      onTap: () => onReact(_quickEmojis[i]),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: highlightedIndex == i ? 44 : 36,
+                        height: highlightedIndex == i ? 44 : 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: highlightedIndex == i
+                              ? ZippTheme.accent1.withAlpha(60)
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          _quickEmojis[i],
+                          style: TextStyle(fontSize: highlightedIndex == i ? 28 : 22),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 4),
+                  _OverlayAction(icon: Icons.reply_outlined, onTap: onReply),
+                  if (onCopy != null)
+                    _OverlayAction(icon: Icons.copy_outlined, onTap: onCopy!),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OverlayAction extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _OverlayAction({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 20, color: ZippTheme.textSecondary),
+        ),
+      );
+}
+
+// ── Hover button for desktop ─────────────────────────────────────────────────
+
 class _HoverBtn extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -157,6 +403,8 @@ class _HoverBtn extends StatelessWidget {
         ),
       );
 }
+
+// ── Bubble body (content rendering) ──────────────────────────────────────────
 
 class _BubbleBody extends StatelessWidget {
   final ZippMessage message;
@@ -252,8 +500,10 @@ class _TextContent extends StatelessWidget {
                   border: const Border(left: BorderSide(color: ZippTheme.accent2, width: 3)),
                 ),
                 child: Text(
-                  '↩ ${message.replyTo!.type == MessageType.text ? "Message" : message.replyTo!.type.name}',
+                  '↩ ${message.replyTo!.plaintext ?? (message.replyTo!.type == MessageType.text ? "Message" : message.replyTo!.type.name)}',
                   style: const TextStyle(fontSize: 12, color: ZippTheme.textSecondary),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             Text(

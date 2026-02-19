@@ -357,6 +357,23 @@ class ChatProvider extends ChangeNotifier {
             msg.senderCiphertext, msg.nonce, keyPair!, senderKey);
         if (senderPlain != null) msg.plaintext = senderPlain;
       }
+
+      // Decrypt reply preview if present
+      final reply = msg.replyTo;
+      if (reply != null && reply.plaintext == null) {
+        final replyKey = await _getPublicKey(reply.senderId);
+        if (replyKey != null) {
+          final rPlain = await CryptoService.decrypt(
+              reply.recipientCiphertext, reply.nonce, keyPair!, replyKey);
+          if (rPlain != null) {
+            reply.plaintext = rPlain;
+          } else {
+            final rSender = await CryptoService.decryptForSender(
+                reply.senderCiphertext, reply.nonce, keyPair!, replyKey);
+            if (rSender != null) reply.plaintext = rSender;
+          }
+        }
+      }
     }
   }
 

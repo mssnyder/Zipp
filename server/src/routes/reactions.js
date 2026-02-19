@@ -42,10 +42,13 @@ export default async (app, prisma) => {
       }
 
       // Fetch updated reactions
-      const reactions = await prisma.reaction.findMany({
+      const rawReactions = await prisma.reaction.findMany({
         where: { messageId: req.params.id },
-        select: { id: true, userId: true, emoji: true, createdAt: true },
+        select: { id: true, userId: true, emoji: true, createdAt: true, user: { select: { displayName: true } } },
       });
+      const reactions = rawReactions.map((r) => ({
+        id: r.id, userId: r.userId, emoji: r.emoji, createdAt: r.createdAt, displayName: r.user?.displayName ?? null,
+      }));
 
       // Broadcast to all participants
       const participantIds = message.conversation.participants.map((p) => p.userId);
@@ -59,10 +62,13 @@ export default async (app, prisma) => {
   app.get("/api/messages/:id/reactions", async (req, reply) => {
     if (!ensureAuth(req, reply)) return reply;
 
-    const reactions = await prisma.reaction.findMany({
+    const rawReactions = await prisma.reaction.findMany({
       where: { messageId: req.params.id },
-      select: { id: true, userId: true, emoji: true, createdAt: true },
+      select: { id: true, userId: true, emoji: true, createdAt: true, user: { select: { displayName: true } } },
     });
+    const reactions = rawReactions.map((r) => ({
+      id: r.id, userId: r.userId, emoji: r.emoji, createdAt: r.createdAt, displayName: r.user?.displayName ?? null,
+    }));
     return { reactions };
   });
 };

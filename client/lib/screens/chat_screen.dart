@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +10,6 @@ import '../models/message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../services/api_service.dart';
-import '../services/websocket_service.dart';
 import 'widgets/attachment_preview.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/message_input.dart';
@@ -37,6 +35,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _scrollCtrl = ScrollController();
+  final _inputKey = GlobalKey<dynamic>();
   ZippMessage? _replyingTo;
   bool _loadingMore = false;
   bool _isDragging = false;
@@ -165,35 +164,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _onReply(ZippMessage msg) => setState(() => _replyingTo = msg);
-  void _cancelReply() => setState(() => _replyingTo = null);
-
-  void _onLongPress(BuildContext context, ZippMessage msg) {
-    final chat = context.read<ChatProvider>();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: ZippTheme.surfaceVariant,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _ReactionPicker(
-        onReact: (emoji) {
-          Navigator.pop(context);
-          chat.toggleReaction(msg.id, widget.conversationId, emoji);
-          HapticFeedback.lightImpact();
-        },
-        onReply: () {
-          Navigator.pop(context);
-          _onReply(msg);
-        },
-        onCopy: msg.plaintext != null
-            ? () {
-                Navigator.pop(context);
-                Clipboard.setData(ClipboardData(text: msg.plaintext!));
-              }
-            : null,
-      ),
-    );
+  void _onReply(ZippMessage msg) {
+    setState(() => _replyingTo = msg);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      (_inputKey.currentState as dynamic)?.requestFocus();
+    });
   }
+  void _cancelReply() => setState(() => _replyingTo = null);
 
   int _lastMsgCount = 0;
 
@@ -290,14 +267,18 @@ class _ChatScreenState extends State<ChatScreen> {
                             return MessageBubble(
                               message: msg,
                               isMine: isMine,
-                              onLongPress: () => _onLongPress(context, msg),
-                              onSwipeReply: () => _onReply(msg),
+                              onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
+                              onReply: () => _onReply(msg),
+                              onCopy: msg.plaintext != null
+                                  ? () => Clipboard.setData(ClipboardData(text: msg.plaintext!))
+                                  : null,
                             ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
                           },
                         ),
                 ),
                 if (typing.isNotEmpty) const TypingIndicator(),
                 MessageInput(
+                  key: _inputKey,
                   replyingTo: _replyingTo,
                   onCancelReply: _cancelReply,
                   onSend: _sendText,
@@ -340,58 +321,3 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-class _ReactionPicker extends StatelessWidget {
-  final void Function(String emoji) onReact;
-  final VoidCallback onReply;
-  final VoidCallback? onCopy;
-
-  const _ReactionPicker({required this.onReact, required this.onReply, this.onCopy});
-
-  static const _quickEmojis = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _quickEmojis
-                  .map((e) => GestureDetector(
-                        onTap: () => onReact(e),
-                        child: Text(e, style: const TextStyle(fontSize: 32))
-                            .animate()
-                            .scale(delay: (_quickEmojis.indexOf(e) * 30).ms),
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                _ActionBtn(icon: Icons.reply_outlined, label: 'Reply', onTap: onReply),
-                if (onCopy != null)
-                  _ActionBtn(icon: Icons.copy_outlined, label: 'Copy', onTap: onCopy!),
-              ],
-            ),
-          ],
-        ),
-      );
-}
-
-class _ActionBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionBtn({required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-        child: TextButton.icon(
-          onPressed: onTap,
-          icon: Icon(icon, color: ZippTheme.textSecondary),
-          label: Text(label, style: const TextStyle(color: ZippTheme.textSecondary)),
-        ),
-      );
-}

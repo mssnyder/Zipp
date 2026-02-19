@@ -3,6 +3,7 @@ class Reaction {
   final String messageId;
   final String userId;
   final String emoji;
+  final String? displayName;
   final DateTime createdAt;
 
   const Reaction({
@@ -10,6 +11,7 @@ class Reaction {
     required this.messageId,
     required this.userId,
     required this.emoji,
+    this.displayName,
     required this.createdAt,
   });
 
@@ -18,6 +20,7 @@ class Reaction {
         messageId: json['messageId'] as String? ?? '',
         userId: json['userId'] as String,
         emoji: json['emoji'] as String,
+        displayName: json['displayName'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 }

@@ -183,6 +183,11 @@ class _MessageInputState extends State<MessageInput> {
     _showAttachmentPreview(bytes, filename, type);
   }
 
+  /// Focus the text input field (e.g. after starting a reply).
+  void requestFocus() {
+    _focusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -290,23 +295,38 @@ class _MessageInputState extends State<MessageInput> {
                   _ctrl.text += emoji.emoji;
                   _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
                 },
-                config: const Config(
+                config: Config(
                   height: 280,
                   checkPlatformCompatibility: true,
-                  emojiViewConfig: EmojiViewConfig(emojiSizeMax: 28),
-                  skinToneConfig: SkinToneConfig(),
-                  categoryViewConfig: CategoryViewConfig(
+                  emojiViewConfig: EmojiViewConfig(
+                    emojiSizeMax: 28,
                     backgroundColor: ZippTheme.surface,
+                    noRecents: const Text(
+                      'No Recents',
+                      style: TextStyle(fontSize: 20, color: ZippTheme.textSecondary),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  skinToneConfig: const SkinToneConfig(
+                    dialogBackgroundColor: ZippTheme.surfaceVariant,
                     indicatorColor: ZippTheme.accent1,
                   ),
-                  bottomActionBarConfig: BottomActionBarConfig(
+                  categoryViewConfig: const CategoryViewConfig(
+                    backgroundColor: ZippTheme.surface,
+                    indicatorColor: ZippTheme.accent1,
+                    iconColorSelected: ZippTheme.accent1,
+                    iconColor: ZippTheme.textSecondary,
+                    dividerColor: ZippTheme.border,
+                  ),
+                  bottomActionBarConfig: const BottomActionBarConfig(
                     backgroundColor: ZippTheme.surface,
                     buttonColor: ZippTheme.accent1,
                     buttonIconColor: Colors.white,
                   ),
-                  searchViewConfig: SearchViewConfig(
+                  searchViewConfig: const SearchViewConfig(
                     backgroundColor: ZippTheme.surface,
                     buttonIconColor: ZippTheme.textSecondary,
+                    hintText: 'Search emoji...',
                   ),
                 ),
               ),

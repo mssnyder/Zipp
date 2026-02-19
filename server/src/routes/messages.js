@@ -28,7 +28,13 @@ function formatMessage(msg) {
           type: msg.replyTo.type,
         }
       : null,
-    reactions: msg.reactions || [],
+    reactions: (msg.reactions || []).map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      emoji: r.emoji,
+      createdAt: r.createdAt,
+      displayName: r.user?.displayName ?? null,
+    })),
     readAt: msg.readAt,
     createdAt: msg.createdAt,
   };
@@ -70,7 +76,7 @@ export default async (app, prisma) => {
           },
         },
         reactions: {
-          select: { id: true, userId: true, emoji: true, createdAt: true },
+          select: { id: true, userId: true, emoji: true, createdAt: true, user: { select: { displayName: true } } },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -141,7 +147,9 @@ export default async (app, prisma) => {
               type: true,
             },
           },
-          reactions: true,
+          reactions: {
+            select: { id: true, userId: true, emoji: true, createdAt: true, user: { select: { displayName: true } } },
+          },
         },
       });
 

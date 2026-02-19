@@ -10,13 +10,17 @@ class MessageReplyPreview {
   final String nonce;
   final MessageType type;
 
-  const MessageReplyPreview({
+  // Decrypted plaintext — populated client-side after decryption
+  String? plaintext;
+
+  MessageReplyPreview({
     required this.id,
     required this.senderId,
     required this.recipientCiphertext,
     required this.senderCiphertext,
     required this.nonce,
     required this.type,
+    this.plaintext,
   });
 
   factory MessageReplyPreview.fromJson(Map<String, dynamic> json) =>
