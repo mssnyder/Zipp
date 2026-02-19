@@ -35,7 +35,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _scrollCtrl = ScrollController();
-  final _inputKey = GlobalKey<dynamic>();
+  final _inputKey = GlobalKey();
   ZippMessage? _replyingTo;
   bool _loadingMore = false;
   bool _isDragging = false;
