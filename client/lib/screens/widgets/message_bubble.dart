@@ -278,14 +278,15 @@ class _GifContent extends StatelessWidget {
     } catch (_) {}
     final url = data?['gifUrl'] as String? ?? data?['tinyUrl'] as String?;
     if (url == null) return const _EncryptedPlaceholder();
-    return CachedNetworkImage(
-      imageUrl: url,
+    return Image.network(
+      url,
       fit: BoxFit.cover,
-      placeholder: (_, __) => const SizedBox(
-        height: 120,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
-      errorWidget: (_, __, ___) => const Icon(Icons.broken_image),
+      loadingBuilder: (_, child, progress) =>
+          progress == null ? child : const SizedBox(
+            height: 120,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
     );
   }
 }

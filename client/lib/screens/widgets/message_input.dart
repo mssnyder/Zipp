@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -18,7 +18,7 @@ class MessageInput extends StatefulWidget {
   final VoidCallback? onCancelReply;
   final Future<void> Function(String text) onSend;
   final Future<void> Function(Map<String, dynamic> gif) onSendGif;
-  final Future<void> Function(File file, String type, String? caption) onSendAttachment;
+  final Future<void> Function(Uint8List bytes, String filename, String type, String? caption) onSendAttachment;
   final String conversationId;
 
   const MessageInput({
@@ -129,34 +129,40 @@ class _MessageInputState extends State<MessageInput> {
     );
     if (choice == null) return;
 
-    File? file;
+    Uint8List? bytes;
+    String filename;
     String type;
     if (choice == 'image') {
       final picker = ImagePicker();
       final xf = await picker.pickImage(source: ImageSource.gallery);
       if (!mounted || xf == null) return;
-      file = File(xf.path);
+      bytes = await xf.readAsBytes();
+      filename = xf.name;
       type = 'IMAGE';
     } else if (choice == 'video') {
       final picker = ImagePicker();
       final xf = await picker.pickVideo(source: ImageSource.gallery);
       if (!mounted || xf == null) return;
-      file = File(xf.path);
+      bytes = await xf.readAsBytes();
+      filename = xf.name;
       type = 'VIDEO';
     } else if (choice == 'file') {
-      final result = await FilePicker.platform.pickFiles();
-      if (!mounted || result == null || result.files.single.path == null) return;
-      file = File(result.files.single.path!);
+      final result = await FilePicker.platform.pickFiles(withData: true);
+      if (!mounted || result == null) return;
+      final pf = result.files.single;
+      if (pf.bytes == null) return;
+      bytes = pf.bytes!;
+      filename = pf.name;
       type = 'FILE';
     } else {
       return;
     }
 
     if (!mounted) return;
-    _showAttachmentPreview(file, type);
+    _showAttachmentPreview(bytes, filename, type);
   }
 
-  void _showAttachmentPreview(File file, String type) {
+  void _showAttachmentPreview(Uint8List bytes, String filename, String type) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -164,7 +170,8 @@ class _MessageInputState extends State<MessageInput> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => AttachmentPreview(
-        file: file,
+        bytes: bytes,
+        filename: filename,
         type: type,
         onSend: widget.onSendAttachment,
       ),
@@ -172,8 +179,8 @@ class _MessageInputState extends State<MessageInput> {
   }
 
   /// Show attachment preview for an externally provided file (e.g. drag-and-drop).
-  void showPreviewForFile(File file, String type) {
-    _showAttachmentPreview(file, type);
+  void showPreviewForFile(Uint8List bytes, String filename, String type) {
+    _showAttachmentPreview(bytes, filename, type);
   }
 
   @override

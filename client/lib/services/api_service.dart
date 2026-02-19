@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -114,9 +115,9 @@ class ApiService {
     return ZippUser.fromJson(data['user'] as Map<String, dynamic>);
   }
 
-  Future<ZippUser> uploadAvatar(File file) async {
+  Future<ZippUser> uploadAvatar(Uint8List bytes, String filename) async {
     final form = FormData.fromMap({
-      'file': await MultipartFile.fromFile(file.path, filename: file.path.split('/').last),
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
     });
     final r = await _dio.post('/api/me/avatar', data: form);
     final data = await _check(r);
@@ -286,9 +287,9 @@ class ApiService {
 
   // ── Attachments ───────────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> uploadAttachment(File file) async {
+  Future<Map<String, dynamic>> uploadAttachment(Uint8List bytes, String filename) async {
     final form = FormData.fromMap({
-      'file': await MultipartFile.fromFile(file.path, filename: file.path.split('/').last),
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
     });
     final r = await _dio.post(
       '/api/upload',

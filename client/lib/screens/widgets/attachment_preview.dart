@@ -1,15 +1,17 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../config/theme.dart';
 
 class AttachmentPreview extends StatefulWidget {
-  final File file;
+  final Uint8List bytes;
+  final String filename;
   final String type; // IMAGE | VIDEO | FILE
-  final Future<void> Function(File file, String type, String? caption) onSend;
+  final Future<void> Function(Uint8List bytes, String filename, String type, String? caption) onSend;
 
   const AttachmentPreview({
     super.key,
-    required this.file,
+    required this.bytes,
+    required this.filename,
     required this.type,
     required this.onSend,
   });
@@ -33,7 +35,7 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
     setState(() => _sending = true);
     final caption = _captionCtrl.text.trim();
     try {
-      await widget.onSend(widget.file, widget.type, caption.isEmpty ? null : caption);
+      await widget.onSend(widget.bytes, widget.filename, widget.type, caption.isEmpty ? null : caption);
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -42,8 +44,6 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
 
   @override
   Widget build(BuildContext context) {
-    final filename = widget.file.path.split('/').last;
-
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -80,7 +80,7 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
             borderRadius: BorderRadius.circular(12),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 300),
-              child: _buildPreview(filename),
+              child: _buildPreview(),
             ),
           ),
           const SizedBox(height: 16),
@@ -131,18 +131,18 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
     );
   }
 
-  Widget _buildPreview(String filename) {
+  Widget _buildPreview() {
     if (widget.type == 'IMAGE') {
-      return Image.file(
-        widget.file,
+      return Image.memory(
+        widget.bytes,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _fileFallback(filename),
+        errorBuilder: (_, __, ___) => _fileFallback(),
       );
     }
-    return _fileFallback(filename);
+    return _fileFallback();
   }
 
-  Widget _fileFallback(String filename) {
+  Widget _fileFallback() {
     final icon = widget.type == 'VIDEO' ? Icons.videocam_outlined : Icons.insert_drive_file_outlined;
     return Container(
       width: double.infinity,
@@ -157,7 +157,7 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
           Icon(icon, size: 48, color: ZippTheme.textSecondary),
           const SizedBox(height: 8),
           Text(
-            filename,
+            widget.filename,
             style: const TextStyle(color: ZippTheme.textPrimary),
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,

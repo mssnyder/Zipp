@@ -58,6 +58,9 @@ class ChatProvider extends ChangeNotifier {
   // Online users
   final Set<String> _online = {};
 
+  // Track recently sent message IDs to deduplicate with WS echo
+  final Set<String> _sentMsgIds = {};
+
   ChatProvider(this._api, this._ws) {
     _ws.addListener(_onWsEvent);
   }
@@ -191,6 +194,7 @@ class ChatProvider extends ChangeNotifier {
       replyToId: replyToId,
     );
     msg.plaintext = text;
+    _sentMsgIds.add(msg.id);
     _appendMessage(conversationId, msg);
     return msg;
   }
@@ -222,6 +226,7 @@ class ChatProvider extends ChangeNotifier {
       type: 'GIF',
     );
     msg.plaintext = payload;
+    _sentMsgIds.add(msg.id);
     _appendMessage(conversationId, msg);
     return msg;
   }
@@ -253,22 +258,39 @@ class ChatProvider extends ChangeNotifier {
       type: type,
     );
     msg.plaintext = payload;
+    _sentMsgIds.add(msg.id);
     _appendMessage(conversationId, msg);
     return msg;
   }
 
   void _appendMessage(String convId, ZippMessage msg) {
     _messages.putIfAbsent(convId, () => []).add(msg);
-    _bumpConversation(convId);
+    _bumpConversation(convId, msg);
     notifyListeners();
   }
 
-  void _bumpConversation(String convId) {
+  void _bumpConversation(String convId, ZippMessage msg) {
     final idx = _conversations.indexWhere((c) => c.id == convId);
-    if (idx > 0) {
-      final conv = _conversations.removeAt(idx);
-      _conversations.insert(0, conv);
-    }
+    if (idx < 0) return;
+    final old = _conversations.removeAt(idx);
+    // Update the lastMessage preview with the new message
+    final preview = LastMessagePreview(
+      id: msg.id,
+      type: msg.type.name.toUpperCase(),
+      createdAt: msg.createdAt,
+      senderId: msg.senderId,
+      recipientCiphertext: msg.recipientCiphertext,
+      senderCiphertext: msg.senderCiphertext,
+      nonce: msg.nonce,
+      plaintext: msg.plaintext,
+    );
+    final updated = Conversation(
+      id: old.id,
+      participant: old.participant,
+      lastMessage: preview,
+      updatedAt: msg.createdAt,
+    );
+    _conversations.insert(0, updated);
   }
 
   // ── Reactions ─────────────────────────────────────────────────────────────
@@ -350,10 +372,14 @@ class ChatProvider extends ChangeNotifier {
     if (convId == null || msgJson == null) return;
 
     final msg = ZippMessage.fromJson(msgJson);
-    await _decryptAll([msg]);
+
+    // Skip if this is an echo of a message we sent (already added locally)
+    if (_sentMsgIds.remove(msg.id)) return;
 
     final existingMsgs = _messages[convId];
     if (existingMsgs?.any((m) => m.id == msg.id) ?? false) return;
+
+    await _decryptAll([msg]);
     _appendMessage(convId, msg);
   }
 

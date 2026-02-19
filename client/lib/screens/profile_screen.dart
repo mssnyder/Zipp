@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -88,7 +87,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final api = context.read<ApiService>();
       final auth = context.read<AuthProvider>();
-      final updated = await api.uploadAvatar(File(xfile.path));
+      final bytes = await xfile.readAsBytes();
+      final updated = await api.uploadAvatar(bytes, xfile.name);
       auth.updateUser(updated);
     } on ApiException catch (e) {
       if (mounted) setState(() => _profileError = e.message);
@@ -283,7 +283,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // ── Avatar ──────────────────────────────────────────────────
                 Center(
                   child: GestureDetector(
-                    onTap: kIsWeb ? null : _pickAvatar,
+                    onTap: _pickAvatar,
                     child: Stack(
                       alignment: Alignment.bottomRight,
                       children: [

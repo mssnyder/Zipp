@@ -175,28 +175,38 @@ class _ConversationList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
     if (chat.convsLoading) return const Center(child: CircularProgressIndicator());
-    if (chat.conversations.isEmpty) return _empty(context);
+    if (chat.conversations.isEmpty && !auth.needsKeyRestore) return _empty(context);
 
     return RefreshIndicator(
       onRefresh: chat.loadConversations,
-      child: ListView.separated(
-        itemCount: chat.conversations.length,
-        separatorBuilder: (_, __) =>
-            desktop ? const SizedBox.shrink() : const Divider(height: 1, indent: 76),
+      child: ListView.builder(
+        itemCount: chat.conversations.length + (auth.needsKeyRestore ? 1 : 0),
         itemBuilder: (ctx, i) {
-          final conv = chat.conversations[i];
+          // Key restore banner at the top
+          if (auth.needsKeyRestore && i == 0) {
+            return _KeyRestoreBanner(auth: auth, chat: chat);
+          }
+          final convIdx = auth.needsKeyRestore ? i - 1 : i;
+          final conv = chat.conversations[convIdx];
           final isSelected = desktop && chat.selectedConvId == conv.id;
-          return ConversationTile(
-            conversation: conv,
-            isSelected: isSelected,
-            onTap: desktop
-                ? () => chat.selectConversation(conv)
-                : null, // null falls back to push navigation
-          )
-              .animate()
-              .fadeIn(delay: (i * 40).ms)
-              .slideX(begin: 0.05, end: 0);
+          return Column(
+            children: [
+              ConversationTile(
+                conversation: conv,
+                isSelected: isSelected,
+                onTap: desktop
+                    ? () => chat.selectConversation(conv)
+                    : null,
+              )
+                  .animate()
+                  .fadeIn(delay: (convIdx * 40).ms)
+                  .slideX(begin: 0.05, end: 0),
+              if (!desktop) const Divider(height: 1, indent: 76),
+            ],
+          );
         },
       ),
     );
@@ -220,6 +230,122 @@ class _ConversationList extends StatelessWidget {
           ],
         ),
       );
+}
+
+class _KeyRestoreBanner extends StatelessWidget {
+  final AuthProvider auth;
+  final ChatProvider chat;
+
+  const _KeyRestoreBanner({required this.auth, required this.chat});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZippTheme.accent1.withAlpha(30),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ZippTheme.accent1.withAlpha(60)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.key, color: ZippTheme.accent2, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Encryption key needed',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Enter your password to decrypt messages.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: () => _showRestoreDialog(context),
+            style: FilledButton.styleFrom(
+              backgroundColor: ZippTheme.accent1,
+            ),
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRestoreDialog(BuildContext context) {
+    final controller = TextEditingController();
+    var loading = false;
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          backgroundColor: ZippTheme.surface,
+          title: const Text('Unlock encryption'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Enter your account password to restore your encryption key.'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  errorText: errorMsg,
+                ),
+                onSubmitted: loading ? null : (_) => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: loading ? null : () => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e),
+              child: loading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Unlock'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _restore(
+    BuildContext ctx,
+    TextEditingController controller,
+    void Function(void Function()) setState,
+    void Function(bool) setLoading,
+    void Function(String?) setError,
+  ) async {
+    final password = controller.text.trim();
+    if (password.isEmpty) return;
+
+    setState(() { setLoading(true); setError(null); });
+
+    final ok = await auth.restoreKeyFromBackup(password);
+    if (!ctx.mounted) return;
+
+    if (ok) {
+      Navigator.pop(ctx);
+      chat.keyPair = auth.keyPair;
+      chat.loadConversations();
+    } else {
+      setState(() { setLoading(false); setError('Wrong password or restore failed.'); });
+    }
+  }
 }
 
 void _showUserSearch(BuildContext context) {

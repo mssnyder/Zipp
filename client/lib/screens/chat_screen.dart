@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -94,11 +94,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
-  Future<void> _sendAttachment(File file, String type, String? caption) async {
+  Future<void> _sendAttachment(Uint8List bytes, String filename, String type, String? caption) async {
     final api = context.read<ApiService>();
     final chat = context.read<ChatProvider>();
     try {
-      final attachment = await api.uploadAttachment(file);
+      final attachment = await api.uploadAttachment(bytes, filename);
       await chat.sendAttachmentMessage(
         conversationId: widget.conversationId,
         attachment: attachment,
@@ -118,13 +118,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _handleDrop(DropDoneDetails details) async {
     for (final xFile in details.files) {
-      final path = xFile.path;
-      if (path.isEmpty) continue;
-      final ext = path.split('.').last.toLowerCase();
+      final name = xFile.name;
+      final ext = name.split('.').last.toLowerCase();
       final type = const {
         'jpg': 'IMAGE', 'jpeg': 'IMAGE', 'png': 'IMAGE', 'gif': 'IMAGE', 'webp': 'IMAGE',
         'mp4': 'VIDEO', 'mov': 'VIDEO', 'avi': 'VIDEO', 'mkv': 'VIDEO',
       }[ext] ?? 'FILE';
+      final bytes = await xFile.readAsBytes();
       if (!mounted) return;
       await showModalBottomSheet(
         context: context,
@@ -133,7 +133,8 @@ class _ChatScreenState extends State<ChatScreen> {
         shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
         builder: (_) => AttachmentPreview(
-          file: File(path),
+          bytes: bytes,
+          filename: name,
           type: type,
           onSend: _sendAttachment,
         ),

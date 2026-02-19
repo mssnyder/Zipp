@@ -14,6 +14,10 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
 
+  /// True when a server backup exists but we couldn't decrypt it (no password
+  /// available, e.g. after OAuth login). The UI should prompt for the password.
+  bool _needsKeyRestore = false;
+
   /// Transient password used during login to decrypt/encrypt key backup.
   /// Cleared immediately after use.
   String? _loginPassword;
@@ -25,6 +29,7 @@ class AuthProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   bool get isAuthenticated => _user != null;
+  bool get needsKeyRestore => _needsKeyRestore;
 
   void _setLoading(bool v) { _loading = v; notifyListeners(); }
   void _setError(String? e) { _error = e; notifyListeners(); }
@@ -135,12 +140,12 @@ class AuthProvider extends ChangeNotifier {
     // leave keyPair null — never overwrite the server key with a new one.
     if (_keyPair == null) {
       if (hasServerBackup) {
-        // Backup exists but we couldn't decrypt it — don't generate a new key
-        // that would overwrite the backup. User can try again or restore manually.
+        _needsKeyRestore = true;
         return;
       }
       _keyPair = await CryptoService.generateKeyPair();
     }
+    _needsKeyRestore = false;
 
     // Step 5: sync with server
     final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
@@ -186,6 +191,8 @@ class AuthProvider extends ChangeNotifier {
       await StorageService.setPrivateKey(base64Url.encode(privBytes));
       _keyPair = await CryptoService.loadKeyPair();
       if (_keyPair == null) return false;
+
+      _needsKeyRestore = false;
 
       // Sync public key with server if needed
       final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
