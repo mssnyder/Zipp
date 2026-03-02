@@ -17,6 +17,8 @@
   zlib,
   libsecret,
   xdg-utils,
+  libayatana-appindicator,
+  libdbusmenu,
 }:
 
 stdenv.mkDerivation {
@@ -44,6 +46,9 @@ stdenv.mkDerivation {
     zlib
     libsecret
     xdg-utils
+    # tray_manager (system tray)
+    libayatana-appindicator
+    libdbusmenu
   ];
 
   desktopItems = [
