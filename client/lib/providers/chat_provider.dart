@@ -335,6 +335,10 @@ class ChatProvider extends ChangeNotifier {
           nonce: updated.nonce,
         );
         _sentMsgIds.add(messageId); // Dedup the WS echo
+
+        // Update conversation preview if the edited message is the last one
+        _refreshConversationPreview(conversationId, msgs);
+
         notifyListeners();
       }
     }
@@ -367,8 +371,43 @@ class ChatProvider extends ChangeNotifier {
         msgs.removeWhere((m) => m.id == messageId);
       }
       _sentMsgIds.add(messageId); // Dedup the WS echo
+
+      // Update conversation preview if the deleted message was the last one
+      _refreshConversationPreview(conversationId, msgs);
+
       notifyListeners();
     }
+  }
+
+  /// Update a conversation's lastMessage preview to reflect the current last message.
+  void _refreshConversationPreview(String convId, List<ZippMessage> msgs) {
+    final convIdx = _conversations.indexWhere((c) => c.id == convId);
+    if (convIdx < 0) return;
+    final conv = _conversations[convIdx];
+
+    // Find the last non-deleted message
+    final lastMsg = msgs.lastOrNull;
+
+    LastMessagePreview? preview;
+    if (lastMsg != null && !lastMsg.isDeleted) {
+      preview = LastMessagePreview(
+        id: lastMsg.id,
+        type: lastMsg.type.name.toUpperCase(),
+        createdAt: lastMsg.createdAt,
+        senderId: lastMsg.senderId,
+        recipientCiphertext: lastMsg.recipientCiphertext,
+        senderCiphertext: lastMsg.senderCiphertext,
+        nonce: lastMsg.nonce,
+        plaintext: lastMsg.plaintext,
+      );
+    }
+
+    _conversations[convIdx] = Conversation(
+      id: conv.id,
+      participant: conv.participant,
+      lastMessage: preview,
+      updatedAt: conv.updatedAt,
+    );
   }
 
   // ── Read receipts ────────────────────────────────────────────────────────
@@ -550,6 +589,10 @@ class ChatProvider extends ChangeNotifier {
 
     await _decryptAll([updated]);
     msgs[idx] = updated;
+
+    // Update conversation preview if the edited message is the last one
+    _refreshConversationPreview(convId, msgs);
+
     notifyListeners();
   }
 
@@ -576,6 +619,10 @@ class ChatProvider extends ChangeNotifier {
     } else {
       msgs.removeWhere((m) => m.id == messageId);
     }
+
+    // Update conversation preview
+    _refreshConversationPreview(convId, msgs);
+
     notifyListeners();
   }
 

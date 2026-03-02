@@ -438,9 +438,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                             ),
                             if (message.isEdited) ...[
                               const SizedBox(width: 4),
-                              const Text(
-                                'edited',
-                                style: TextStyle(
+                              Text(
+                                'edited ${DateFormat.jm().format(message.editedAt!.toLocal())}',
+                                style: const TextStyle(
                                   fontSize: 10,
                                   color: ZippTheme.textSecondary,
                                   fontStyle: FontStyle.italic,
