@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/constants.dart';
-import 'storage_service.dart';
 
 typedef WsEventHandler = void Function(String event, Map<String, dynamic> payload);
 
@@ -13,6 +13,9 @@ class WebSocketService {
   bool _disposed = false;
   bool _connecting = false;
   Timer? _reconnectTimer;
+
+  /// Cookie getter for native auth — set by main.dart from ApiService.
+  Future<String?> Function()? sessionCookieGetter;
 
   void addListener(WsEventHandler handler) => _handlers.add(handler);
   void removeListener(WsEventHandler handler) => _handlers.remove(handler);
@@ -29,8 +32,8 @@ class WebSocketService {
     _channel?.sink.close();
     _channel = null;
 
-    // Get session cookie for authentication
-    final sessionCookie = await StorageService.getSessionCookie();
+    // Get session cookie for authentication (native only; web uses browser cookies)
+    final sessionCookie = await sessionCookieGetter?.call();
 
     try {
       final wsUri = sessionCookie != null
@@ -53,7 +56,8 @@ class WebSocketService {
         onError: (_) => _scheduleReconnect(),
         cancelOnError: false,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[WS] connect failed: $e');
       _scheduleReconnect();
     } finally {
       _connecting = false;

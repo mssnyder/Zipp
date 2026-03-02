@@ -38,6 +38,19 @@ class ApiService {
         : {'Cookie': cookies.map((c) => '${c.name}=${c.value}').join('; ')};
   }
 
+  /// Get session cookie value for native WebSocket auth.
+  /// Returns null on web (browser handles cookies automatically).
+  Future<String?> getSessionCookie() async {
+    if (kIsWeb || _cookieJar == null) return null;
+    final uri = Uri.parse(ZippConfig.serverUrl);
+    final cookies = await _cookieJar!.loadForRequest(uri);
+    try {
+      return cookies.firstWhere((c) => c.name == 'sid').value;
+    } catch (_) {
+      return null;
+    }
+  }
+
   ApiService._();
 
   static Future<ApiService> create() async {

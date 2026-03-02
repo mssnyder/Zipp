@@ -34,6 +34,17 @@ class StorageService {
     await p.setBool('onboarded', true);
   }
 
+  // Minimize to tray (desktop only)
+  static Future<bool> getMinimizeToTray() async {
+    final p = await _prefs;
+    return p.getBool('minimize_to_tray') ?? true;
+  }
+
+  static Future<void> setMinimizeToTray(bool value) async {
+    final p = await _prefs;
+    await p.setBool('minimize_to_tray', value);
+  }
+
   static Future<void> clearAll() async {
     await _storage.deleteAll();
     final p = await _prefs;

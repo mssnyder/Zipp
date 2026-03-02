@@ -12,6 +12,7 @@ import '../../config/theme.dart';
 import '../../models/message.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../utils/native_clipboard.dart';
 import 'reaction_bar.dart';
 
 const _quickEmojis = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
@@ -115,14 +116,18 @@ class _MessageBubbleState extends State<MessageBubble> {
     try {
       final file = await DefaultCacheManager().getSingleFile(url);
       final bytes = await file.readAsBytes();
-      await Pasteboard.writeImage(bytes);
+      if (isNativeLinux) {
+        await copyImageToClipboardNative(bytes, file.path);
+      } else {
+        await Pasteboard.writeImage(bytes);
+      }
       if (mounted) _showCopied();
     } catch (_) {
-      // Fallback: copy URL as text
       Clipboard.setData(ClipboardData(text: url));
       if (mounted) _showCopied();
     }
   }
+
 
   void _showCopied() {
     ScaffoldMessenger.of(context).showSnackBar(

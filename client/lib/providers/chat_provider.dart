@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/reaction.dart';
 import '../services/api_service.dart';
 import '../services/crypto_service.dart';
+import '../services/notification_service.dart';
 import '../services/websocket_service.dart';
 
 class ChatProvider extends ChangeNotifier {
@@ -32,6 +33,9 @@ class ChatProvider extends ChangeNotifier {
     _selectedConvId = conv.id;
     _selectedParticipantId = conv.participant?.id ?? '';
     _selectedParticipantName = conv.participant?.name ?? '';
+    NotificationService.instance.activeConversationId = conv.id;
+    _unreadConvIds.remove(conv.id);
+    _updateTrayBadge();
     notifyListeners();
     if (_messages[conv.id] == null) loadMessages(conv.id);
   }
@@ -40,6 +44,7 @@ class ChatProvider extends ChangeNotifier {
     _selectedConvId = null;
     _selectedParticipantId = null;
     _selectedParticipantName = '';
+    NotificationService.instance.activeConversationId = null;
     notifyListeners();
   }
 
@@ -60,6 +65,10 @@ class ChatProvider extends ChangeNotifier {
 
   // Track recently sent message IDs to deduplicate with WS echo
   final Set<String> _sentMsgIds = {};
+
+  // Unread conversation tracking for tray badge
+  final Set<String> _unreadConvIds = {};
+  int get unreadCount => _unreadConvIds.length;
 
   ChatProvider(this._api, this._ws) {
     _ws.addListener(_onWsEvent);
@@ -551,6 +560,49 @@ class ChatProvider extends ChangeNotifier {
 
     await _decryptAll([msg]);
     _appendMessage(convId, msg);
+    _notifyNewMessage(convId, msg);
+  }
+
+  void _notifyNewMessage(String convId, ZippMessage msg) {
+    final ns = NotificationService.instance;
+
+    // Find conversation to get sender name
+    final conv = _conversations.cast<Conversation?>().firstWhere(
+      (c) => c!.id == convId,
+      orElse: () => null,
+    );
+    final senderName = conv?.participant?.name ?? 'Someone';
+
+    // Determine message preview text
+    final preview = (msg.plaintext != null && msg.type == MessageType.text)
+        ? msg.plaintext!
+        : switch (msg.type) {
+            MessageType.gif => 'Sent a GIF',
+            MessageType.image => 'Sent an image',
+            MessageType.video => 'Sent a video',
+            MessageType.file => 'Sent a file',
+            MessageType.text => 'New message',
+          };
+
+    ns.showMessageNotification(
+      conversationId: convId,
+      senderName: senderName,
+      messagePreview: preview,
+      messageType: msg.type.name.toUpperCase(),
+    );
+
+    // Track unread for tray badge
+    if (ns.activeConversationId != convId || !ns.isAppFocused) {
+      _unreadConvIds.add(convId);
+      _updateTrayBadge();
+    }
+  }
+
+  /// Callback for updating the tray badge — set by main.dart on desktop.
+  void Function(int count)? onUnreadCountChanged;
+
+  void _updateTrayBadge() {
+    onUnreadCountChanged?.call(_unreadConvIds.length);
   }
 
   void _handleReaction(Map<String, dynamic> payload) {

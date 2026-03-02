@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/message.dart';
@@ -65,6 +66,13 @@ class _MessageInputState extends State<MessageInput> {
           _send();
           return KeyEventResult.handled;
         }
+        // Intercept Ctrl+V to check for image paste
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyV &&
+            HardwareKeyboard.instance.isControlPressed) {
+          _handlePaste();
+          return KeyEventResult.handled;
+        }
         return KeyEventResult.ignored;
       };
     }
@@ -103,6 +111,25 @@ class _MessageInputState extends State<MessageInput> {
         context.read<WebSocketService>().sendTyping(widget.conversationId, isTyping: false);
       }
     });
+  }
+
+  Future<void> _handlePaste() async {
+    try {
+      final imageBytes = await Pasteboard.image;
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        _showAttachmentPreview(imageBytes, 'pasted_image.png', 'IMAGE');
+        return;
+      }
+    } catch (_) {}
+    // No image data — fall through to normal text paste
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null) {
+      final sel = _ctrl.selection;
+      final text = _ctrl.text;
+      final newText = text.replaceRange(sel.start, sel.end, data!.text!);
+      _ctrl.text = newText;
+      _ctrl.selection = TextSelection.collapsed(offset: sel.start + data.text!.length);
+    }
   }
 
   Future<void> _send() async {

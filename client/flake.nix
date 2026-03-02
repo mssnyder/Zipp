@@ -56,6 +56,8 @@
           libthai
           libdatrie
           libxdmcp
+          # tray_manager (system tray)
+          libayatana-appindicator
           # Image/media
           libwebp
           libpng

@@ -9,6 +9,8 @@ import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/crypto_service.dart';
+import '../services/desktop_manager.dart';
+import '../services/storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -509,6 +511,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onLink: _linkGoogle,
                   onUnlink: () => _unlinkAccount('google'),
                 ),
+
+                // ── Desktop settings ───────────────────────────────────────
+                if (DesktopManager.instance.isDesktop) ...[
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 24),
+                  Text('Desktop settings', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  const _MinimizeToTrayToggle(),
+                ],
                 const SizedBox(height: 32),
               ],
             ),
@@ -576,6 +588,63 @@ class _LinkedAccountRow extends StatelessWidget {
               onPressed: onLink,
               child: const Text('Link', style: TextStyle(color: ZippTheme.accent2)),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MinimizeToTrayToggle extends StatefulWidget {
+  const _MinimizeToTrayToggle();
+
+  @override
+  State<_MinimizeToTrayToggle> createState() => _MinimizeToTrayToggleState();
+}
+
+class _MinimizeToTrayToggleState extends State<_MinimizeToTrayToggle> {
+  bool _minimizeToTray = true;
+
+  @override
+  void initState() {
+    super.initState();
+    StorageService.getMinimizeToTray().then((v) {
+      if (mounted) setState(() => _minimizeToTray = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: ZippTheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ZippTheme.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.desktop_windows_outlined, color: ZippTheme.textSecondary, size: 28),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Minimize to tray', style: TextStyle(fontWeight: FontWeight.w500)),
+                Text(
+                  'Keep running in background when window is closed',
+                  style: TextStyle(fontSize: 12, color: ZippTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _minimizeToTray,
+            activeThumbColor: ZippTheme.accent1,
+            onChanged: (v) {
+              setState(() => _minimizeToTray = v);
+              StorageService.setMinimizeToTray(v);
+            },
+          ),
         ],
       ),
     );

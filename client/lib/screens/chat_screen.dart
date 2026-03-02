@@ -9,6 +9,7 @@ import '../models/message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import 'widgets/attachment_preview.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/message_input.dart';
@@ -43,6 +44,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    // Track active conversation for notification suppression
+    NotificationService.instance.activeConversationId = widget.conversationId;
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final chat = context.read<ChatProvider>();
       await chat.loadMessages(widget.conversationId);
@@ -82,6 +86,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    // Clear active conversation unless embedded (desktop two-pane manages its own)
+    if (!widget.embedded) {
+      NotificationService.instance.activeConversationId = null;
+    }
     _scrollCtrl.dispose();
     super.dispose();
   }

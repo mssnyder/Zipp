@@ -67,6 +67,7 @@ class AuthProvider extends ChangeNotifier {
       _user = await _api.login(email: email, password: password);
     } on ApiException catch (e) {
       _setError(e.message);
+      _setLoading(false);
       rethrow;
     }
     // Key management runs before we notify listeners, so ChatProvider gets
