@@ -64,8 +64,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onScroll() {
-    // Scroll-up to load older messages
-    if (_scrollCtrl.position.pixels <= 120 && !_loadingMore) {
+    // In a reversed ListView, maxScrollExtent = top (oldest messages).
+    if (_scrollCtrl.position.pixels >=
+            _scrollCtrl.position.maxScrollExtent - 120 &&
+        !_loadingMore) {
       _loadMore();
     }
   }
@@ -158,7 +160,7 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
+          0.0,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -294,17 +296,18 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? const Center(child: CircularProgressIndicator())
                       : ListView.builder(
                           controller: _scrollCtrl,
+                          reverse: true,
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           itemCount: messages.length + (_loadingMore ? 1 : 0),
                           itemBuilder: (ctx, i) {
-                            if (_loadingMore && i == 0) {
+                            // Reversed: index 0 = bottom (newest), last index = top (oldest/spinner).
+                            if (_loadingMore && i == messages.length) {
                               return const Padding(
                                 padding: EdgeInsets.all(8),
                                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                               );
                             }
-                            final idx = _loadingMore ? i - 1 : i;
-                            final msg = messages[idx];
+                            final msg = messages[messages.length - 1 - i];
                             final isMine = msg.senderId == myId;
                             return MessageBubble(
                               message: msg,
