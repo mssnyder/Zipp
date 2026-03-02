@@ -49,9 +49,9 @@ class _ZippAppState extends State<ZippApp> {
         return null;
       },
       routes: [
-        GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (_, __) => const LoginScreen(showRegister: true)),
-        GoRoute(path: '/', builder: (_, __) => const AdaptiveHome()),
+        GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (_, _) => const LoginScreen(showRegister: true)),
+        GoRoute(path: '/', builder: (_, _) => const AdaptiveHome()),
         GoRoute(
           path: '/chat/:convId',
           builder: (_, state) => ChatScreen(
@@ -60,7 +60,7 @@ class _ZippAppState extends State<ZippApp> {
             participantName: Uri.decodeComponent(state.uri.queryParameters['name'] ?? ''),
           ),
         ),
-        GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
+        GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
       ],
     );
 

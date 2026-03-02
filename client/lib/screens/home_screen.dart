@@ -3,10 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
-import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
-import '../services/api_service.dart';
 import 'widgets/conversation_tile.dart';
 import 'widgets/user_search_sheet.dart';
 
@@ -44,7 +42,7 @@ class HomeScreen extends StatelessWidget {
                   onRefresh: chat.loadConversations,
                   child: ListView.separated(
                     itemCount: chat.conversations.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
+                    separatorBuilder: (_, _) => const Divider(height: 1, indent: 76),
                     itemBuilder: (ctx, i) {
                       final conv = chat.conversations[i];
                       return ConversationTile(conversation: conv)

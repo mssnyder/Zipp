@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -96,7 +94,7 @@ class ApiService {
       'email': email,
       'username': username,
       'password': password,
-      if (displayName != null) 'displayName': displayName,
+      'displayName': ?displayName,
     });
     final data = await _check(r);
     return ZippUser.fromJson(data['user'] as Map<String, dynamic>);
@@ -149,8 +147,8 @@ class ApiService {
 
   Future<ZippUser> updateMe({String? displayName, String? username}) async {
     final r = await _dio.patch('/api/me', data: {
-      if (displayName != null) 'displayName': displayName,
-      if (username != null) 'username': username,
+      'displayName': ?displayName,
+      'username': ?username,
     });
     final data = await _check(r);
     return ZippUser.fromJson(data['user'] as Map<String, dynamic>);
@@ -175,9 +173,9 @@ class ApiService {
     final r = await _dio.post('/api/me/password', data: {
       'currentPassword': current,
       'newPassword': newPass,
-      if (encryptedPrivateKey != null) 'encryptedPrivateKey': encryptedPrivateKey,
-      if (keySalt != null) 'keySalt': keySalt,
-      if (keyNonce != null) 'keyNonce': keyNonce,
+      'encryptedPrivateKey': ?encryptedPrivateKey,
+      'keySalt': ?keySalt,
+      'keyNonce': ?keyNonce,
     });
     await _check(r);
   }
@@ -231,9 +229,9 @@ class ApiService {
   }) async {
     final r = await _dio.put('/api/keys', data: {
       'publicKey': publicKey,
-      if (encryptedPrivateKey != null) 'encryptedPrivateKey': encryptedPrivateKey,
-      if (keySalt != null) 'keySalt': keySalt,
-      if (keyNonce != null) 'keyNonce': keyNonce,
+      'encryptedPrivateKey': ?encryptedPrivateKey,
+      'keySalt': ?keySalt,
+      'keyNonce': ?keyNonce,
     });
     await _check(r);
   }
@@ -269,7 +267,7 @@ class ApiService {
     final r = await _dio.get(
       '/api/conversations/$conversationId/messages',
       queryParameters: {
-        if (before != null) 'before': before,
+        'before': ?before,
         'limit': 50,
       },
     );
@@ -292,7 +290,7 @@ class ApiService {
       'senderCiphertext': senderCiphertext,
       'nonce': nonce,
       'type': type,
-      if (replyToId != null) 'replyToId': replyToId,
+      'replyToId': ?replyToId,
     });
     final data = await _check(r);
     return ZippMessage.fromJson(data['message'] as Map<String, dynamic>);

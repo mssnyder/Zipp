@@ -69,8 +69,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         username: _usernameCtrl.text.trim(),
       );
       auth.updateUser(updated);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile updated')));
+      }
     } on ApiException catch (e) {
       setState(() => _profileError = e.message);
     } finally {
@@ -79,14 +81,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _pickAvatar() async {
+    final api = context.read<ApiService>();
+    final auth = context.read<AuthProvider>();
     final picker = ImagePicker();
     final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
     if (xfile == null) return;
 
     setState(() => _saving = true);
     try {
-      final api = context.read<ApiService>();
-      final auth = context.read<AuthProvider>();
       final bytes = await xfile.readAsBytes();
       final updated = await api.uploadAvatar(bytes, xfile.name);
       auth.updateUser(updated);
@@ -109,9 +111,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    final auth = context.read<AuthProvider>();
+    final api = context.read<ApiService>();
     setState(() { _changingPw = true; _pwError = null; });
     try {
-      final auth = context.read<AuthProvider>();
       String? encPriv, kSalt, kNonce;
       // Re-encrypt private key backup with the new password
       if (auth.keyPair != null) {
@@ -121,7 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         kSalt = backup.keySalt;
         kNonce = backup.keyNonce;
       }
-      await context.read<ApiService>().changePassword(
+      await api.changePassword(
         current: _currentPwCtrl.text,
         newPass: newPw,
         encryptedPrivateKey: encPriv,
@@ -131,8 +134,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _currentPwCtrl.clear();
       _newPwCtrl.clear();
       _confirmPwCtrl.clear();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password updated')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Password updated')));
+      }
     } on ApiException catch (e) {
       setState(() => _pwError = e.message);
     } finally {
@@ -177,8 +182,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       _setPwCtrl.clear();
       _setPwConfirmCtrl.clear();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Encryption password set')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Encryption password set')));
+      }
     } on ApiException catch (e) {
       setState(() => _setPwError = e.message);
     } finally {
@@ -187,6 +194,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _unlinkAccount(String provider) async {
+    final api = context.read<ApiService>();
+    final auth = context.read<AuthProvider>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -205,16 +214,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (confirmed != true) return;
 
     try {
-      final api = context.read<ApiService>();
-      final auth = context.read<AuthProvider>();
       await api.unlinkAccount(provider);
       final updated = await api.getMe();
       auth.updateUser(updated);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$provider unlinked')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$provider unlinked')));
+      }
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: ZippTheme.error));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message), backgroundColor: ZippTheme.error));
+      }
     }
   }
 
@@ -228,11 +239,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
       _startLinkPoll();
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: ZippTheme.error));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message), backgroundColor: ZippTheme.error));
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: ZippTheme.error));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: ZippTheme.error));
+      }
     }
   }
 
@@ -251,8 +266,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (updated.linkedProviders.length > initialCount) {
           t.cancel();
           auth.updateUser(updated);
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Google account linked')));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Google account linked')));
+          }
         }
       } catch (_) {}
     });

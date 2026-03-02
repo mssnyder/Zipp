@@ -1,5 +1,3 @@
-import 'user.dart';
-
 class ConversationParticipant {
   final String id;
   final String username;

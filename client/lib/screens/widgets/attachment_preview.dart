@@ -137,7 +137,7 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
       return Image.memory(
         widget.bytes,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _fileFallback(),
+        errorBuilder: (_, _, _) => _fileFallback(),
       );
     }
     return _fileFallback();

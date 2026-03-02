@@ -866,7 +866,7 @@ class _GifContent extends StatelessWidget {
             height: 120,
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           ),
-      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+      errorBuilder: (_, _, _) => const Icon(Icons.broken_image),
     );
   }
 }
@@ -904,14 +904,14 @@ class _ImageContent extends StatelessWidget {
                   height: 120,
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 ),
-            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+            errorBuilder: (_, _, _) => const Icon(Icons.broken_image),
           )
         else
           CachedNetworkImage(
             imageUrl: resolvedUrl,
             httpHeaders: headers.isNotEmpty ? headers : null,
             fit: BoxFit.cover,
-            placeholder: (_, __) => const SizedBox(
+            placeholder: (_, _) => const SizedBox(
               height: 120,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),

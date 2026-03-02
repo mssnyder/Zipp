@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'storage_service.dart';
@@ -16,8 +15,6 @@ class CryptoService {
   static final _x25519 = X25519();
   static final _aesGcm = AesGcm.with256bits();
   static final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-  static const _pbkdf2Iterations = 600000;
-
   /// Generate a new X25519 key pair and persist private key.
   static Future<SimpleKeyPair> generateKeyPair() async {
     final kp = await _x25519.newKeyPair();
@@ -193,7 +190,7 @@ class _Pbkdf2Params {
 }
 
 /// Top-level function for compute() isolate.
-/// Returns raw key bytes (List<int>) so the result is serializable across isolates.
+/// Returns raw key bytes (`List<int>`) so the result is serializable across isolates.
 Future<List<int>> _pbkdf2Isolate(_Pbkdf2Params params) async {
   final pbkdf2 = Pbkdf2(
     macAlgorithm: Hmac.sha256(),

@@ -120,8 +120,8 @@ class _GifPickerState extends State<GifPicker> {
                                 child: CachedNetworkImage(
                                   imageUrl: tinyUrl,
                                   fit: BoxFit.cover,
-                                  placeholder: (_, __) => Container(color: ZippTheme.surfaceVariant),
-                                  errorWidget: (_, __, ___) => const Icon(Icons.broken_image),
+                                  placeholder: (_, _) => Container(color: ZippTheme.surfaceVariant),
+                                  errorWidget: (_, _, _) => const Icon(Icons.broken_image),
                                 ),
                               ),
                             );

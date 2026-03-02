@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -126,8 +125,11 @@ class _MessageInputState extends State<MessageInput> {
 
   void _toggleEmoji() {
     setState(() => _showEmoji = !_showEmoji);
-    if (_showEmoji) _focusNode.unfocus();
-    else _focusNode.requestFocus();
+    if (_showEmoji) {
+      _focusNode.unfocus();
+    } else {
+      _focusNode.requestFocus();
+    }
   }
 
   Future<void> _showGifPicker() async {
