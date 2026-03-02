@@ -41,6 +41,10 @@ dependencies:
 
   # Image/GIF display with caching
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
+
+  # Clipboard image support
+  pasteboard: ^0.3.0
 
   # File/image picking + drag-and-drop (desktop + web)
   image_picker: ^1.1.2

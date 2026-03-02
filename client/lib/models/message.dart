@@ -46,15 +46,16 @@ class ZippMessage {
   final String id;
   final String conversationId;
   final String senderId;
-  final String recipientCiphertext;
-  final String senderCiphertext;
-  final String nonce;
+  final String? recipientCiphertext;
+  final String? senderCiphertext;
+  final String? nonce;
   final MessageType type;
   final String? replyToId;
   final MessageReplyPreview? replyTo;
   final List<Reaction> reactions;
   final DateTime? readAt;
   final DateTime? editedAt;
+  final DateTime? deletedAt;
   final DateTime createdAt;
 
   // Decrypted plaintext — populated client-side after decryption
@@ -64,30 +65,32 @@ class ZippMessage {
     required this.id,
     required this.conversationId,
     required this.senderId,
-    required this.recipientCiphertext,
-    required this.senderCiphertext,
-    required this.nonce,
+    this.recipientCiphertext,
+    this.senderCiphertext,
+    this.nonce,
     required this.type,
     this.replyToId,
     this.replyTo,
     required this.reactions,
     this.readAt,
     this.editedAt,
+    this.deletedAt,
     required this.createdAt,
     this.plaintext,
   });
 
   bool get isRead => readAt != null;
   bool get isEdited => editedAt != null;
+  bool get isDeleted => deletedAt != null;
   bool get isDecrypted => plaintext != null;
 
   factory ZippMessage.fromJson(Map<String, dynamic> json) => ZippMessage(
         id: json['id'] as String,
         conversationId: json['conversationId'] as String,
         senderId: json['senderId'] as String,
-        recipientCiphertext: json['recipientCiphertext'] as String,
-        senderCiphertext: json['senderCiphertext'] as String,
-        nonce: json['nonce'] as String,
+        recipientCiphertext: json['recipientCiphertext'] as String?,
+        senderCiphertext: json['senderCiphertext'] as String?,
+        nonce: json['nonce'] as String?,
         type: _parseType(json['type'] as String?),
         replyToId: json['replyToId'] as String?,
         replyTo: json['replyTo'] != null
@@ -99,6 +102,7 @@ class ZippMessage {
             [],
         readAt: json['readAt'] != null ? DateTime.parse(json['readAt'] as String) : null,
         editedAt: json['editedAt'] != null ? DateTime.parse(json['editedAt'] as String) : null,
+        deletedAt: json['deletedAt'] != null ? DateTime.parse(json['deletedAt'] as String) : null,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 
@@ -114,6 +118,7 @@ class ZippMessage {
     List<Reaction>? reactions,
     DateTime? readAt,
     DateTime? editedAt,
+    DateTime? deletedAt,
     String? plaintext,
     String? recipientCiphertext,
     String? senderCiphertext,
@@ -132,6 +137,7 @@ class ZippMessage {
         reactions: reactions ?? this.reactions,
         readAt: readAt ?? this.readAt,
         editedAt: editedAt ?? this.editedAt,
+        deletedAt: deletedAt ?? this.deletedAt,
         createdAt: createdAt,
         plaintext: plaintext ?? this.plaintext,
       );

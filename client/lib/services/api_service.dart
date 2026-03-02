@@ -320,7 +320,7 @@ class ApiService {
     required String conversationId,
     required String messageId,
   }) async {
-    final r = await _dio.delete('/api/conversations/$conversationId/messages/$messageId');
+    final r = await _dio.delete('/api/conversations/$conversationId/messages/$messageId', data: {});
     await _check(r);
   }
 

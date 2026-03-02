@@ -188,22 +188,38 @@ class _ChatScreenState extends State<ChatScreen> {
   void _cancelEdit() => setState(() => _editingMessage = null);
 
   Future<void> _onEditSend(String messageId, String newText) async {
-    final chat = context.read<ChatProvider>();
-    await chat.editMessage(
-      conversationId: widget.conversationId,
-      messageId: messageId,
-      newText: newText,
-      recipientId: widget.participantId,
-    );
-    if (mounted) setState(() => _editingMessage = null);
+    try {
+      final chat = context.read<ChatProvider>();
+      await chat.editMessage(
+        conversationId: widget.conversationId,
+        messageId: messageId,
+        newText: newText,
+        recipientId: widget.participantId,
+      );
+      if (mounted) setState(() => _editingMessage = null);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Edit failed: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _onDelete(ZippMessage msg) async {
-    final chat = context.read<ChatProvider>();
-    await chat.deleteMessage(
-      conversationId: widget.conversationId,
-      messageId: msg.id,
-    );
+    try {
+      final chat = context.read<ChatProvider>();
+      await chat.deleteMessage(
+        conversationId: widget.conversationId,
+        messageId: msg.id,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
   }
 
   int _lastMsgCount = 0;

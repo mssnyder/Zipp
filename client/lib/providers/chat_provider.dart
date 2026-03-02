@@ -350,10 +350,22 @@ class ChatProvider extends ChangeNotifier {
       messageId: messageId,
     );
 
-    // Remove locally
+    // Update locally — check if any messages reply to this one
     final msgs = _messages[conversationId];
     if (msgs != null) {
-      msgs.removeWhere((m) => m.id == messageId);
+      final hasReplies = msgs.any((m) => m.replyToId == messageId);
+      if (hasReplies) {
+        // Soft delete: mark as deleted, keep in list for reply references
+        final idx = msgs.indexWhere((m) => m.id == messageId);
+        if (idx >= 0) {
+          msgs[idx] = msgs[idx].copyWith(
+            deletedAt: DateTime.now(),
+            plaintext: null,
+          );
+        }
+      } else {
+        msgs.removeWhere((m) => m.id == messageId);
+      }
       _sentMsgIds.add(messageId); // Dedup the WS echo
       notifyListeners();
     }
@@ -411,18 +423,20 @@ class ChatProvider extends ChangeNotifier {
 
     for (final msg in msgs) {
       if (msg.plaintext != null) continue;
+      // Skip soft-deleted messages (ciphertext nulled out)
+      if (msg.isDeleted || msg.recipientCiphertext == null || msg.nonce == null) continue;
       final senderKey = await _getPublicKey(msg.senderId);
       if (senderKey == null) continue;
       // For received messages: decrypt recipientCiphertext using sender's public key.
       // For own messages: this will fail (wrong shared secret), then fall through to
       // decryptForSender which uses our own local public key on the senderCiphertext copy.
       final plain = await CryptoService.decrypt(
-          msg.recipientCiphertext, msg.nonce, keyPair!, senderKey);
+          msg.recipientCiphertext!, msg.nonce!, keyPair!, senderKey);
       if (plain != null) {
         msg.plaintext = plain;
-      } else {
+      } else if (msg.senderCiphertext != null) {
         final senderPlain = await CryptoService.decryptForSender(
-            msg.senderCiphertext, msg.nonce, keyPair!, myPubKey);
+            msg.senderCiphertext!, msg.nonce!, keyPair!, myPubKey);
         if (senderPlain != null) msg.plaintext = senderPlain;
       }
 
@@ -542,6 +556,7 @@ class ChatProvider extends ChangeNotifier {
   void _handleMessageDelete(Map<String, dynamic> payload) {
     final convId = payload['conversationId'] as String?;
     final messageId = payload['messageId'] as String?;
+    final softDelete = payload['softDelete'] as bool? ?? false;
     if (convId == null || messageId == null) return;
 
     // Skip if this is an echo of our own delete
@@ -549,7 +564,18 @@ class ChatProvider extends ChangeNotifier {
 
     final msgs = _messages[convId];
     if (msgs == null) return;
-    msgs.removeWhere((m) => m.id == messageId);
+
+    if (softDelete) {
+      final idx = msgs.indexWhere((m) => m.id == messageId);
+      if (idx >= 0) {
+        msgs[idx] = msgs[idx].copyWith(
+          deletedAt: DateTime.now(),
+          plaintext: null,
+        );
+      }
+    } else {
+      msgs.removeWhere((m) => m.id == messageId);
+    }
     notifyListeners();
   }
 

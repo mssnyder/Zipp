@@ -37,6 +37,7 @@ function formatMessage(msg) {
     })),
     readAt: msg.readAt,
     editedAt: msg.editedAt ?? null,
+    deletedAt: msg.deletedAt ?? null,
     createdAt: msg.createdAt,
   };
 }
@@ -277,6 +278,7 @@ export default async (app, prisma) => {
   );
 
   // DELETE /api/conversations/:id/messages/:msgId — delete for both
+  // Hard-deletes if no replies reference this message; soft-deletes otherwise.
   app.delete(
     "/api/conversations/:id/messages/:msgId",
     async (req, reply) => {
@@ -295,12 +297,36 @@ export default async (app, prisma) => {
         select: { userId: true },
       });
 
-      await prisma.message.delete({ where: { id: req.params.msgId } });
+      // Check if any messages reply to this one
+      const replyCount = await prisma.message.count({
+        where: { replyToId: req.params.msgId },
+      });
+
+      if (replyCount > 0) {
+        // Soft delete: null out ciphertext, keep the row so replies still reference it
+        await prisma.message.update({
+          where: { id: req.params.msgId },
+          data: {
+            recipientCiphertext: null,
+            senderCiphertext: null,
+            nonce: null,
+            deletedAt: new Date(),
+          },
+        });
+        // Also remove reactions on the deleted message
+        await prisma.reaction.deleteMany({ where: { messageId: req.params.msgId } });
+      } else {
+        await prisma.message.delete({ where: { id: req.params.msgId } });
+      }
 
       app.broadcast(
         participants.map((p) => p.userId),
         "message:delete",
-        { conversationId: req.params.id, messageId: req.params.msgId },
+        {
+          conversationId: req.params.id,
+          messageId: req.params.msgId,
+          softDelete: replyCount > 0,
+        },
       );
 
       return { ok: true };

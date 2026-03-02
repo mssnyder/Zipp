@@ -80,18 +80,19 @@ model Message {
   id                  String      @id @default(cuid())
   conversationId      String
   senderId            String
-  recipientCiphertext String
-  senderCiphertext    String
-  nonce               String
+  recipientCiphertext String?
+  senderCiphertext    String?
+  nonce               String?
   type                MessageType @default(TEXT)
   replyToId           String?
   readAt              DateTime?
   editedAt            DateTime?
+  deletedAt           DateTime?
   createdAt           DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation("sender", fields: [senderId], references: [id])
-  replyTo      Message?     @relation("replies", fields: [replyToId], references: [id])
+  replyTo      Message?     @relation("replies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies      Message[]    @relation("replies")
   reactions    Reaction[]
 

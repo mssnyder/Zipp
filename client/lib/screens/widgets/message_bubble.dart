@@ -4,7 +4,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:intl/intl.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/message.dart';
@@ -64,42 +66,68 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   // ── Copy ──────────────────────────────────────────────────────────────────
 
-  void _copyMessage() {
+  Future<void> _copyMessage() async {
     final msg = widget.message;
     if (msg.plaintext == null) return;
-    String? text;
+
     switch (msg.type) {
       case MessageType.text:
-        text = msg.plaintext;
+        final text = msg.plaintext;
+        if (text != null && text.isNotEmpty) {
+          Clipboard.setData(ClipboardData(text: text));
+          _showCopied();
+        }
       case MessageType.gif:
         try {
           final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
-          text = data['gifUrl'] as String? ?? data['tinyUrl'] as String?;
+          final url = data['gifUrl'] as String? ?? data['tinyUrl'] as String?;
+          if (url != null) await _copyImageFromCache(url);
         } catch (_) {}
       case MessageType.image:
+        try {
+          final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
+          final api = context.read<ApiService>();
+          final url = api.resolveUrl(data['url'] as String? ?? '');
+          await _copyImageFromCache(url);
+        } catch (_) {}
       case MessageType.video:
         try {
           final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
-          final caption = data['caption'] as String?;
+          final caption = data['caption'] as String? ?? data['filename'] as String?;
           if (caption != null && caption.isNotEmpty) {
-            text = caption;
-          } else {
-            final api = context.read<ApiService>();
-            text = api.resolveUrl(data['url'] as String? ?? '');
+            Clipboard.setData(ClipboardData(text: caption));
+            _showCopied();
           }
         } catch (_) {}
       case MessageType.file:
         try {
           final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
-          text = data['caption'] as String? ?? data['filename'] as String?;
+          final text = data['caption'] as String? ?? data['filename'] as String?;
+          if (text != null && text.isNotEmpty) {
+            Clipboard.setData(ClipboardData(text: text));
+            _showCopied();
+          }
         } catch (_) {}
     }
-    if (text != null && text.isNotEmpty) {
-      Clipboard.setData(ClipboardData(text: text));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
-      );
+  }
+
+  Future<void> _copyImageFromCache(String url) async {
+    try {
+      final file = await DefaultCacheManager().getSingleFile(url);
+      final bytes = await file.readAsBytes();
+      await Pasteboard.writeImage(bytes);
+      if (mounted) _showCopied();
+    } catch (_) {
+      // Fallback: copy URL as text
+      Clipboard.setData(ClipboardData(text: url));
+      if (mounted) _showCopied();
     }
+  }
+
+  void _showCopied() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+    );
   }
 
   // ── Delete confirmation ────────────────────────────────────────────────────
@@ -353,13 +381,15 @@ class _MessageBubbleState extends State<MessageBubble> {
     final message = widget.message;
     final isMine = widget.isMine;
 
+    final isDeleted = message.isDeleted;
+
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
+      onEnter: isDeleted ? null : (_) => setState(() => _hovering = true),
+      onExit: isDeleted ? null : (_) => setState(() => _hovering = false),
       child: GestureDetector(
-        onLongPressStart: _isDesktop ? null : _onLongPressStart,
-        onLongPressMoveUpdate: _isDesktop ? null : _onLongPressMoveUpdate,
-        onLongPressEnd: _isDesktop ? null : _onLongPressEnd,
+        onLongPressStart: _isDesktop || isDeleted ? null : _onLongPressStart,
+        onLongPressMoveUpdate: _isDesktop || isDeleted ? null : _onLongPressMoveUpdate,
+        onLongPressEnd: _isDesktop || isDeleted ? null : _onLongPressEnd,
         child: _wrapWithSwipe(
           isMine: isMine,
           child: Padding(
@@ -368,7 +398,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_isDesktop && isMine) ...[
+                if (_isDesktop && isMine && !isDeleted) ...[
                   IgnorePointer(
                     ignoring: !_hovering,
                     child: AnimatedOpacity(
@@ -432,7 +462,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   ),
                 ),
                 ),
-                if (_isDesktop && !isMine) ...[
+                if (_isDesktop && !isMine && !isDeleted) ...[
                   const SizedBox(width: 4),
                   IgnorePointer(
                     ignoring: !_hovering,
@@ -738,6 +768,33 @@ class _BubbleBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final api = context.read<ApiService>();
+
+    // Soft-deleted message placeholder
+    if (message.isDeleted) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: ZippTheme.surfaceVariant.withAlpha(120),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ZippTheme.border.withAlpha(60)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.block, size: 14, color: ZippTheme.textSecondary),
+            SizedBox(width: 6),
+            Text(
+              'This message was deleted',
+              style: TextStyle(
+                color: ZippTheme.textSecondary,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     Widget content;
     switch (message.type) {
