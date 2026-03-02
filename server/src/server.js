@@ -123,7 +123,7 @@ await app.register(fastifyMultipart, {
 await app.register(fastifyStatic, {
   root: join(process.env.DATA_DIR ?? process.cwd(), "uploads"),
   prefix: "/uploads/",
-  decorateReply: false,
+  decorateReply: true,
 });
 
 // WebSocket support
