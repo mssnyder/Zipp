@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
@@ -37,6 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollCtrl = ScrollController();
   final _inputKey = GlobalKey();
   ZippMessage? _replyingTo;
+  ZippMessage? _editingMessage;
   bool _loadingMore = false;
   bool _isDragging = false;
 
@@ -47,6 +47,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final chat = context.read<ChatProvider>();
       await chat.loadMessages(widget.conversationId);
       _markRead();
+      // Auto-focus the message input when the chat opens
+      (_inputKey.currentState as dynamic)?.requestFocus();
     });
 
     _scrollCtrl.addListener(_onScroll);
@@ -165,12 +167,42 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onReply(ZippMessage msg) {
-    setState(() => _replyingTo = msg);
+    setState(() {
+      _replyingTo = msg;
+      _editingMessage = null;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       (_inputKey.currentState as dynamic)?.requestFocus();
     });
   }
   void _cancelReply() => setState(() => _replyingTo = null);
+
+  void _onEdit(ZippMessage msg) {
+    setState(() {
+      _editingMessage = msg;
+      _replyingTo = null;
+    });
+  }
+  void _cancelEdit() => setState(() => _editingMessage = null);
+
+  Future<void> _onEditSend(String messageId, String newText) async {
+    final chat = context.read<ChatProvider>();
+    await chat.editMessage(
+      conversationId: widget.conversationId,
+      messageId: messageId,
+      newText: newText,
+      recipientId: widget.participantId,
+    );
+    if (mounted) setState(() => _editingMessage = null);
+  }
+
+  Future<void> _onDelete(ZippMessage msg) async {
+    final chat = context.read<ChatProvider>();
+    await chat.deleteMessage(
+      conversationId: widget.conversationId,
+      messageId: msg.id,
+    );
+  }
 
   int _lastMsgCount = 0;
 
@@ -279,9 +311,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               isMine: isMine,
                               onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
                               onReply: () => _onReply(msg),
-                              onCopy: msg.plaintext != null
-                                  ? () => Clipboard.setData(ClipboardData(text: msg.plaintext!))
-                                  : null,
+                              onEdit: (m) => _onEdit(m),
+                              onDelete: (m) => _onDelete(m),
                             ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
                           },
                         ),
@@ -291,7 +322,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   key: _inputKey,
                   replyingTo: _replyingTo,
                   onCancelReply: _cancelReply,
+                  editingMessage: _editingMessage,
+                  onCancelEdit: _cancelEdit,
                   onSend: _sendText,
+                  onEditSend: _onEditSend,
                   onSendGif: _sendGif,
                   onSendAttachment: _sendAttachment,
                   conversationId: widget.conversationId,

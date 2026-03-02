@@ -23,6 +23,23 @@ class ApiService {
   late final Dio _dio;
   CookieJar? _cookieJar;
 
+  /// Auth headers for image widgets on native (cookie not sent automatically).
+  Map<String, String> _imageHeaders = {};
+  Map<String, String> get imageHeaders => _imageHeaders;
+
+  /// Call after login to cache cookie headers for image requests.
+  Future<void> refreshImageHeaders() async {
+    if (kIsWeb || _cookieJar == null) {
+      _imageHeaders = {};
+      return;
+    }
+    final uri = Uri.parse(ZippConfig.serverUrl);
+    final cookies = await _cookieJar!.loadForRequest(uri);
+    _imageHeaders = cookies.isEmpty
+        ? {}
+        : {'Cookie': cookies.map((c) => '${c.name}=${c.value}').join('; ')};
+  }
+
   ApiService._();
 
   static Future<ApiService> create() async {
@@ -283,6 +300,30 @@ class ApiService {
 
   Future<void> markRead(String conversationId, String messageId) async {
     await _dio.patch('/api/conversations/$conversationId/messages/$messageId/read');
+  }
+
+  Future<ZippMessage> editMessage({
+    required String conversationId,
+    required String messageId,
+    required String recipientCiphertext,
+    required String senderCiphertext,
+    required String nonce,
+  }) async {
+    final r = await _dio.patch('/api/conversations/$conversationId/messages/$messageId', data: {
+      'recipientCiphertext': recipientCiphertext,
+      'senderCiphertext': senderCiphertext,
+      'nonce': nonce,
+    });
+    final data = await _check(r);
+    return ZippMessage.fromJson(data['message'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteMessage({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final r = await _dio.delete('/api/conversations/$conversationId/messages/$messageId');
+    await _check(r);
   }
 
   // ── Reactions ─────────────────────────────────────────────────────────────

@@ -19,7 +19,8 @@ class MessageBubble extends StatefulWidget {
   final bool isMine;
   final void Function(String emoji)? onReact;
   final VoidCallback? onReply;
-  final VoidCallback? onCopy;
+  final void Function(ZippMessage)? onEdit;
+  final void Function(ZippMessage)? onDelete;
 
   const MessageBubble({
     super.key,
@@ -27,7 +28,8 @@ class MessageBubble extends StatefulWidget {
     required this.isMine,
     this.onReact,
     this.onReply,
-    this.onCopy,
+    this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -46,6 +48,9 @@ class _MessageBubbleState extends State<MessageBubble> {
       defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.macOS;
 
+  bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   @override
   void dispose() {
     _removeOverlay();
@@ -56,6 +61,74 @@ class _MessageBubbleState extends State<MessageBubble> {
     _overlayEntry?.remove();
     _overlayEntry = null;
   }
+
+  // ── Copy ──────────────────────────────────────────────────────────────────
+
+  void _copyMessage() {
+    final msg = widget.message;
+    if (msg.plaintext == null) return;
+    String? text;
+    switch (msg.type) {
+      case MessageType.text:
+        text = msg.plaintext;
+      case MessageType.gif:
+        try {
+          final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
+          text = data['gifUrl'] as String? ?? data['tinyUrl'] as String?;
+        } catch (_) {}
+      case MessageType.image:
+      case MessageType.video:
+        try {
+          final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
+          final caption = data['caption'] as String?;
+          if (caption != null && caption.isNotEmpty) {
+            text = caption;
+          } else {
+            final api = context.read<ApiService>();
+            text = api.resolveUrl(data['url'] as String? ?? '');
+          }
+        } catch (_) {}
+      case MessageType.file:
+        try {
+          final data = jsonDecode(msg.plaintext!) as Map<String, dynamic>;
+          text = data['caption'] as String? ?? data['filename'] as String?;
+        } catch (_) {}
+    }
+    if (text != null && text.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: text));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+      );
+    }
+  }
+
+  // ── Delete confirmation ────────────────────────────────────────────────────
+
+  void _confirmDelete() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ZippTheme.surfaceVariant,
+        title: const Text('Delete message?'),
+        content: const Text('This will delete the message for everyone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.onDelete?.call(widget.message);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Reaction overlay (mobile) ──────────────────────────────────────────────
 
   void _showReactionOverlay([Offset? longPressPos]) {
     _removeOverlay();
@@ -69,25 +142,32 @@ class _MessageBubbleState extends State<MessageBubble> {
     final screenSize = MediaQuery.of(context).size;
     final isMine = widget.isMine;
 
-    // Position the overlay above the bubble, or below if too close to the top
-    const overlayHeight = 52.0;
+    // Calculate overlay height based on content
+    const emojiRowHeight = 52.0;
+    const actionItemHeight = 44.0;
+    int actionCount = 2; // Reply + Copy
+    if (isMine && widget.message.type == MessageType.text) actionCount++;
+    if (isMine) actionCount++;
+    final totalHeight = emojiRowHeight + 1 + (actionCount * actionItemHeight) + 8;
+
     const overlayPadding = 8.0;
-    final showAbove = bubblePos.dy > overlayHeight + overlayPadding + 50;
+    final showAbove = bubblePos.dy > totalHeight + overlayPadding + 50;
 
     final overlayTop = showAbove
-        ? bubblePos.dy - overlayHeight - overlayPadding
+        ? bubblePos.dy - totalHeight - overlayPadding
         : bubblePos.dy + bubbleSize.height + overlayPadding;
 
-    // Align horizontally with the message
     final overlayLeft = isMine
         ? (bubblePos.dx + bubbleSize.width - 280).clamp(8.0, screenSize.width - 288.0)
         : bubblePos.dx.clamp(8.0, screenSize.width - 288.0);
 
     _overlayEntry = OverlayEntry(
-      builder: (context) => _ReactionOverlay(
+      builder: (context) => _MobileOverlay(
         top: overlayTop,
         left: overlayLeft,
         highlightedIndex: _highlightedIndex,
+        isMine: isMine,
+        messageType: widget.message.type,
         onReact: (emoji) {
           _removeOverlay();
           widget.onReact?.call(emoji);
@@ -97,10 +177,20 @@ class _MessageBubbleState extends State<MessageBubble> {
           _removeOverlay();
           widget.onReply?.call();
         },
-        onCopy: widget.message.plaintext != null
+        onCopy: () {
+          _removeOverlay();
+          _copyMessage();
+        },
+        onEdit: isMine && widget.message.type == MessageType.text
             ? () {
                 _removeOverlay();
-                widget.onCopy?.call();
+                widget.onEdit?.call(widget.message);
+              }
+            : null,
+        onDelete: isMine
+            ? () {
+                _removeOverlay();
+                _confirmDelete();
               }
             : null,
         onDismiss: _removeOverlay,
@@ -138,7 +228,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         ? (bubblePos.dx + bubbleSize.width - 280).clamp(8.0, screenSize.width - 288.0)
         : bubblePos.dx.clamp(8.0, screenSize.width - 288.0);
 
-    // Calculate which emoji the finger is closest to
     final fingerPos = details.globalPosition;
     const emojiSpacing = 44.0;
     const emojiStartX = 8.0;
@@ -175,6 +264,19 @@ class _MessageBubbleState extends State<MessageBubble> {
     _highlightedIndex = -1;
   }
 
+  // ── Desktop hover buttons ──────────────────────────────────────────────────
+
+  void _handleMenuAction(String action) {
+    switch (action) {
+      case 'copy':
+        _copyMessage();
+      case 'edit':
+        widget.onEdit?.call(widget.message);
+      case 'delete':
+        _confirmDelete();
+    }
+  }
+
   Widget _buildHoverButtons() => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -186,10 +288,65 @@ class _MessageBubbleState extends State<MessageBubble> {
           _HoverBtn(
             icon: Icons.emoji_emotions_outlined,
             tooltip: 'React',
-            onTap: () => _showReactionOverlay(),
+            onTap: () => _showDesktopReactionOverlay(),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 18, color: ZippTheme.textSecondary),
+            color: ZippTheme.surfaceVariant,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            onSelected: _handleMenuAction,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'copy', child: _MenuRow(icon: Icons.copy_outlined, label: 'Copy')),
+              if (widget.isMine && widget.message.type == MessageType.text)
+                const PopupMenuItem(value: 'edit', child: _MenuRow(icon: Icons.edit_outlined, label: 'Edit')),
+              if (widget.isMine)
+                const PopupMenuItem(value: 'delete', child: _MenuRow(icon: Icons.delete_outlined, label: 'Delete', danger: true)),
+            ],
           ),
         ],
       );
+
+  /// Desktop: show emoji-only reaction overlay (no action items).
+  void _showDesktopReactionOverlay() {
+    _removeOverlay();
+
+    final renderBox = _bubbleKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final bubblePos = renderBox.localToGlobal(Offset.zero);
+    final bubbleSize = renderBox.size;
+    final screenSize = MediaQuery.of(context).size;
+    final isMine = widget.isMine;
+
+    const overlayHeight = 52.0;
+    const overlayPadding = 8.0;
+    final showAbove = bubblePos.dy > overlayHeight + overlayPadding + 50;
+
+    final overlayTop = showAbove
+        ? bubblePos.dy - overlayHeight - overlayPadding
+        : bubblePos.dy + bubbleSize.height + overlayPadding;
+
+    final overlayLeft = isMine
+        ? (bubblePos.dx + bubbleSize.width - 280).clamp(8.0, screenSize.width - 288.0)
+        : bubblePos.dx.clamp(8.0, screenSize.width - 288.0);
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) => _DesktopReactionOverlay(
+        top: overlayTop,
+        left: overlayLeft,
+        onReact: (emoji) {
+          _removeOverlay();
+          widget.onReact?.call(emoji);
+        },
+        onDismiss: _removeOverlay,
+      ),
+    );
+
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -203,20 +360,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         onLongPressStart: _isDesktop ? null : _onLongPressStart,
         onLongPressMoveUpdate: _isDesktop ? null : _onLongPressMoveUpdate,
         onLongPressEnd: _isDesktop ? null : _onLongPressEnd,
-        child: Dismissible(
-          key: ValueKey('dismiss-${message.id}'),
-          direction: isMine ? DismissDirection.endToStart : DismissDirection.startToEnd,
-          confirmDismiss: (_) async {
-            widget.onReply?.call();
-            return false;
-          },
-          background: Align(
-            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-            child: Padding(
-              padding: EdgeInsets.only(left: isMine ? 0 : 16, right: isMine ? 16 : 0),
-              child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
-            ),
-          ),
+        child: _wrapWithSwipe(
+          isMine: isMine,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
             child: Row(
@@ -243,7 +388,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     key: _bubbleKey,
                     crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
-                      _BubbleBody(message: message, isMine: isMine),
+                      _BubbleBody(message: message, isMine: isMine, isDesktop: _isDesktop),
                       if (message.reactions.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
@@ -261,6 +406,17 @@ class _MessageBubbleState extends State<MessageBubble> {
                               DateFormat.jm().format(message.createdAt.toLocal()),
                               style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
                             ),
+                            if (message.isEdited) ...[
+                              const SizedBox(width: 4),
+                              const Text(
+                                'edited',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: ZippTheme.textSecondary,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
                             if (isMine) ...[
                               const SizedBox(width: 4),
                               Icon(
@@ -294,26 +450,41 @@ class _MessageBubbleState extends State<MessageBubble> {
       ),
     );
   }
+
+  /// Wrap with swipe-to-reply Dismissible (Android only).
+  Widget _wrapWithSwipe({required bool isMine, required Widget child}) {
+    if (!_isAndroid) return child;
+    return Dismissible(
+      key: ValueKey('dismiss-${widget.message.id}'),
+      direction: isMine ? DismissDirection.endToStart : DismissDirection.startToEnd,
+      confirmDismiss: (_) async {
+        widget.onReply?.call();
+        return false;
+      },
+      background: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Padding(
+          padding: EdgeInsets.only(left: isMine ? 0 : 16, right: isMine ? 16 : 0),
+          child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
+        ),
+      ),
+      child: child,
+    );
+  }
 }
 
-// ── Inline reaction overlay ──────────────────────────────────────────────────
+// ── Desktop: emoji-only reaction overlay ─────────────────────────────────────
 
-class _ReactionOverlay extends StatelessWidget {
+class _DesktopReactionOverlay extends StatelessWidget {
   final double top;
   final double left;
-  final int highlightedIndex;
   final void Function(String emoji) onReact;
-  final VoidCallback onReply;
-  final VoidCallback? onCopy;
   final VoidCallback onDismiss;
 
-  const _ReactionOverlay({
+  const _DesktopReactionOverlay({
     required this.top,
     required this.left,
-    required this.highlightedIndex,
     required this.onReact,
-    required this.onReply,
-    this.onCopy,
     required this.onDismiss,
   });
 
@@ -321,7 +492,6 @@ class _ReactionOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Tap outside to dismiss
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -353,27 +523,13 @@ class _ReactionOverlay extends StatelessWidget {
                   for (int i = 0; i < _quickEmojis.length; i++)
                     GestureDetector(
                       onTap: () => onReact(_quickEmojis[i]),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: highlightedIndex == i ? 44 : 36,
-                        height: highlightedIndex == i ? 44 : 36,
+                      child: Container(
+                        width: 36,
+                        height: 36,
                         alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: highlightedIndex == i
-                              ? ZippTheme.accent1.withAlpha(60)
-                              : Colors.transparent,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          _quickEmojis[i],
-                          style: TextStyle(fontSize: highlightedIndex == i ? 28 : 22),
-                        ),
+                        child: Text(_quickEmojis[i], style: const TextStyle(fontSize: 22)),
                       ),
                     ),
-                  const SizedBox(width: 4),
-                  _OverlayAction(icon: Icons.reply_outlined, onTap: onReply),
-                  if (onCopy != null)
-                    _OverlayAction(icon: Icons.copy_outlined, onTap: onCopy!),
                 ],
               ),
             ),
@@ -384,21 +540,145 @@ class _ReactionOverlay extends StatelessWidget {
   }
 }
 
-class _OverlayAction extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
+// ── Mobile: combined reaction + action overlay (Messenger-style) ─────────────
 
-  const _OverlayAction({required this.icon, required this.onTap});
+class _MobileOverlay extends StatelessWidget {
+  final double top;
+  final double left;
+  final int highlightedIndex;
+  final bool isMine;
+  final MessageType messageType;
+  final void Function(String emoji) onReact;
+  final VoidCallback onReply;
+  final VoidCallback onCopy;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final VoidCallback onDismiss;
+
+  const _MobileOverlay({
+    required this.top,
+    required this.left,
+    required this.highlightedIndex,
+    required this.isMine,
+    required this.messageType,
+    required this.onReact,
+    required this.onReply,
+    required this.onCopy,
+    this.onEdit,
+    this.onDelete,
+    required this.onDismiss,
+  });
 
   @override
-  Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon, size: 20, color: ZippTheme.textSecondary),
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onDismiss,
+            child: const SizedBox.expand(),
+          ),
         ),
-      );
+        Positioned(
+          top: top,
+          left: left,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 276,
+              decoration: BoxDecoration(
+                color: ZippTheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(100),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Emoji row
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (int i = 0; i < _quickEmojis.length; i++)
+                          GestureDetector(
+                            onTap: () => onReact(_quickEmojis[i]),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: highlightedIndex == i ? 44 : 36,
+                              height: highlightedIndex == i ? 44 : 36,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: highlightedIndex == i
+                                    ? ZippTheme.accent1.withAlpha(60)
+                                    : Colors.transparent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                _quickEmojis[i],
+                                style: TextStyle(fontSize: highlightedIndex == i ? 28 : 22),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: Colors.white.withAlpha(20)),
+                  // Action items
+                  _ActionItem(icon: Icons.reply_outlined, label: 'Reply', onTap: onReply),
+                  _ActionItem(icon: Icons.copy_outlined, label: 'Copy', onTap: onCopy),
+                  if (onEdit != null)
+                    _ActionItem(icon: Icons.edit_outlined, label: 'Edit', onTap: onEdit!),
+                  if (onDelete != null)
+                    _ActionItem(icon: Icons.delete_outlined, label: 'Delete', onTap: onDelete!, danger: true),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  const _ActionItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? Colors.red[300]! : ZippTheme.textPrimary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Text(label, style: TextStyle(color: color, fontSize: 15)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Hover button for desktop ─────────────────────────────────────────────────
@@ -424,13 +704,36 @@ class _HoverBtn extends StatelessWidget {
       );
 }
 
+// ── Desktop popup menu row ───────────────────────────────────────────────────
+
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool danger;
+
+  const _MenuRow({required this.icon, required this.label, this.danger = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? Colors.red[300]! : ZippTheme.textPrimary;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(color: color)),
+      ],
+    );
+  }
+}
+
 // ── Bubble body (content rendering) ──────────────────────────────────────────
 
 class _BubbleBody extends StatelessWidget {
   final ZippMessage message;
   final bool isMine;
+  final bool isDesktop;
 
-  const _BubbleBody({required this.message, required this.isMine});
+  const _BubbleBody({required this.message, required this.isMine, required this.isDesktop});
 
   @override
   Widget build(BuildContext context) {
@@ -447,7 +750,7 @@ class _BubbleBody extends StatelessWidget {
       case MessageType.file:
         content = _FileContent(message: message);
       case MessageType.text:
-        content = _TextContent(message: message);
+        content = _TextContent(message: message, isDesktop: isDesktop);
     }
 
     if (isMine) {
@@ -502,7 +805,8 @@ class _BubbleBody extends StatelessWidget {
 
 class _TextContent extends StatelessWidget {
   final ZippMessage message;
-  const _TextContent({required this.message});
+  final bool isDesktop;
+  const _TextContent({required this.message, required this.isDesktop});
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -526,10 +830,16 @@ class _TextContent extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            Text(
-              message.plaintext ?? '🔒 Encrypted',
-              style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
-            ),
+            if (isDesktop)
+              SelectableText(
+                message.plaintext ?? '🔒 Encrypted',
+                style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+              )
+            else
+              Text(
+                message.plaintext ?? '🔒 Encrypted',
+                style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+              ),
           ],
         ),
       );
@@ -574,18 +884,38 @@ class _ImageContent extends StatelessWidget {
     } catch (_) {}
     final url = data?['url'] as String?;
     if (url == null) return const _EncryptedPlaceholder();
+    final mime = data?['mimeType'] as String? ?? '';
+    final isGif = mime.contains('gif');
+    final resolvedUrl = api.resolveUrl(url);
+    final headers = api.imageHeaders;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        CachedNetworkImage(
-          imageUrl: api.resolveUrl(url),
-          fit: BoxFit.cover,
-          placeholder: (_, __) => const SizedBox(
-            height: 120,
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        if (isGif)
+          // Use Image.network for animated GIFs to preserve animation
+          Image.network(
+            resolvedUrl,
+            headers: headers.isNotEmpty ? headers : null,
+            fit: BoxFit.cover,
+            loadingBuilder: (_, child, progress) =>
+                progress == null ? child : const SizedBox(
+                  height: 120,
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+          )
+        else
+          CachedNetworkImage(
+            imageUrl: resolvedUrl,
+            httpHeaders: headers.isNotEmpty ? headers : null,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => const SizedBox(
+              height: 120,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
           ),
-        ),
         _buildCaption(data),
       ],
     );
@@ -605,6 +935,7 @@ class _VideoContent extends StatelessWidget {
     } catch (_) {}
     final thumbUrl = data?['thumbUrl'] as String?;
     final duration = data?['duration'] as int?;
+    final headers = api.imageHeaders;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,6 +947,7 @@ class _VideoContent extends StatelessWidget {
             if (thumbUrl != null)
               CachedNetworkImage(
                 imageUrl: api.resolveUrl(thumbUrl),
+                httpHeaders: headers.isNotEmpty ? headers : null,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: 200,

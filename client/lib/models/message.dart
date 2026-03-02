@@ -54,6 +54,7 @@ class ZippMessage {
   final MessageReplyPreview? replyTo;
   final List<Reaction> reactions;
   final DateTime? readAt;
+  final DateTime? editedAt;
   final DateTime createdAt;
 
   // Decrypted plaintext — populated client-side after decryption
@@ -71,11 +72,13 @@ class ZippMessage {
     this.replyTo,
     required this.reactions,
     this.readAt,
+    this.editedAt,
     required this.createdAt,
     this.plaintext,
   });
 
   bool get isRead => readAt != null;
+  bool get isEdited => editedAt != null;
   bool get isDecrypted => plaintext != null;
 
   factory ZippMessage.fromJson(Map<String, dynamic> json) => ZippMessage(
@@ -95,6 +98,7 @@ class ZippMessage {
                 .toList() ??
             [],
         readAt: json['readAt'] != null ? DateTime.parse(json['readAt'] as String) : null,
+        editedAt: json['editedAt'] != null ? DateTime.parse(json['editedAt'] as String) : null,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 
@@ -106,19 +110,28 @@ class ZippMessage {
         _ => MessageType.text,
       };
 
-  ZippMessage copyWith({List<Reaction>? reactions, DateTime? readAt, String? plaintext}) =>
+  ZippMessage copyWith({
+    List<Reaction>? reactions,
+    DateTime? readAt,
+    DateTime? editedAt,
+    String? plaintext,
+    String? recipientCiphertext,
+    String? senderCiphertext,
+    String? nonce,
+  }) =>
       ZippMessage(
         id: id,
         conversationId: conversationId,
         senderId: senderId,
-        recipientCiphertext: recipientCiphertext,
-        senderCiphertext: senderCiphertext,
-        nonce: nonce,
+        recipientCiphertext: recipientCiphertext ?? this.recipientCiphertext,
+        senderCiphertext: senderCiphertext ?? this.senderCiphertext,
+        nonce: nonce ?? this.nonce,
         type: type,
         replyToId: replyToId,
         replyTo: replyTo,
         reactions: reactions ?? this.reactions,
         readAt: readAt ?? this.readAt,
+        editedAt: editedAt ?? this.editedAt,
         createdAt: createdAt,
         plaintext: plaintext ?? this.plaintext,
       );

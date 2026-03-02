@@ -86,6 +86,7 @@ model Message {
   type                MessageType @default(TEXT)
   replyToId           String?
   readAt              DateTime?
+  editedAt            DateTime?
   createdAt           DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

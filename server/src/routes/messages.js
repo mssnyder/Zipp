@@ -36,6 +36,7 @@ function formatMessage(msg) {
       displayName: r.user?.displayName ?? null,
     })),
     readAt: msg.readAt,
+    editedAt: msg.editedAt ?? null,
     createdAt: msg.createdAt,
   };
 }
@@ -213,6 +214,94 @@ export default async (app, prisma) => {
         messageId: msg.id,
         readAt: now,
       });
+
+      return { ok: true };
+    },
+  );
+
+  // PATCH /api/conversations/:id/messages/:msgId — edit message
+  app.patch(
+    "/api/conversations/:id/messages/:msgId",
+    async (req, reply) => {
+      if (!ensureAuth(req, reply)) return reply;
+
+      const msg = await prisma.message.findFirst({
+        where: { id: req.params.msgId, conversationId: req.params.id },
+      });
+      if (!msg) return reply.code(404).send({ error: "Message not found" });
+      if (msg.senderId !== req.auth.user.id) {
+        return reply.code(403).send({ error: "Can only edit your own messages" });
+      }
+
+      const { recipientCiphertext, senderCiphertext, nonce } = req.body || {};
+      if (!recipientCiphertext || !senderCiphertext || !nonce) {
+        return reply.code(400).send({
+          error: "Missing required fields: recipientCiphertext, senderCiphertext, nonce",
+        });
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: req.params.msgId },
+        data: {
+          recipientCiphertext,
+          senderCiphertext,
+          nonce,
+          editedAt: new Date(),
+        },
+        include: {
+          replyTo: {
+            select: {
+              id: true, senderId: true,
+              recipientCiphertext: true, senderCiphertext: true,
+              nonce: true, type: true,
+            },
+          },
+          reactions: {
+            select: { id: true, userId: true, emoji: true, createdAt: true, user: { select: { displayName: true } } },
+          },
+        },
+      });
+
+      const participants = await prisma.conversationParticipant.findMany({
+        where: { conversationId: req.params.id },
+        select: { userId: true },
+      });
+      app.broadcast(
+        participants.map((p) => p.userId),
+        "message:edit",
+        { conversationId: req.params.id, message: formatMessage(updated) },
+      );
+
+      return { message: formatMessage(updated) };
+    },
+  );
+
+  // DELETE /api/conversations/:id/messages/:msgId — delete for both
+  app.delete(
+    "/api/conversations/:id/messages/:msgId",
+    async (req, reply) => {
+      if (!ensureAuth(req, reply)) return reply;
+
+      const msg = await prisma.message.findFirst({
+        where: { id: req.params.msgId, conversationId: req.params.id },
+      });
+      if (!msg) return reply.code(404).send({ error: "Message not found" });
+      if (msg.senderId !== req.auth.user.id) {
+        return reply.code(403).send({ error: "Can only delete your own messages" });
+      }
+
+      const participants = await prisma.conversationParticipant.findMany({
+        where: { conversationId: req.params.id },
+        select: { userId: true },
+      });
+
+      await prisma.message.delete({ where: { id: req.params.msgId } });
+
+      app.broadcast(
+        participants.map((p) => p.userId),
+        "message:delete",
+        { conversationId: req.params.id, messageId: req.params.msgId },
+      );
 
       return { ok: true };
     },

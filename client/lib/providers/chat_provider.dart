@@ -298,6 +298,67 @@ class ChatProvider extends ChangeNotifier {
     _conversations.insert(0, updated);
   }
 
+  // ── Edit / Delete ────────────────────────────────────────────────────────
+
+  Future<bool> editMessage({
+    required String conversationId,
+    required String messageId,
+    required String newText,
+    required String recipientId,
+  }) async {
+    final recipientKey = await _getPublicKey(recipientId);
+    if (recipientKey == null || keyPair == null) return false;
+
+    final encRecipient = await CryptoService.encrypt(newText, keyPair!, recipientKey);
+    final sharedNonce = base64Url.decode(encRecipient.nonce);
+    final myPubKey = await CryptoService.getPublicKeyBase64(keyPair!);
+    final encSender = await CryptoService.encrypt(newText, keyPair!, myPubKey, nonce: sharedNonce);
+
+    final updated = await _api.editMessage(
+      conversationId: conversationId,
+      messageId: messageId,
+      recipientCiphertext: encRecipient.ciphertext,
+      senderCiphertext: encSender.ciphertext,
+      nonce: encRecipient.nonce,
+    );
+
+    // Update local message
+    final msgs = _messages[conversationId];
+    if (msgs != null) {
+      final idx = msgs.indexWhere((m) => m.id == messageId);
+      if (idx >= 0) {
+        msgs[idx] = msgs[idx].copyWith(
+          plaintext: newText,
+          editedAt: updated.editedAt ?? DateTime.now(),
+          recipientCiphertext: updated.recipientCiphertext,
+          senderCiphertext: updated.senderCiphertext,
+          nonce: updated.nonce,
+        );
+        _sentMsgIds.add(messageId); // Dedup the WS echo
+        notifyListeners();
+      }
+    }
+    return true;
+  }
+
+  Future<void> deleteMessage({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    await _api.deleteMessage(
+      conversationId: conversationId,
+      messageId: messageId,
+    );
+
+    // Remove locally
+    final msgs = _messages[conversationId];
+    if (msgs != null) {
+      msgs.removeWhere((m) => m.id == messageId);
+      _sentMsgIds.add(messageId); // Dedup the WS echo
+      notifyListeners();
+    }
+  }
+
   // ── Read receipts ────────────────────────────────────────────────────────
 
   /// Mark the latest unread message from the other person as read.
@@ -401,6 +462,10 @@ class ChatProvider extends ChangeNotifier {
         _handleReaction(payload);
       case 'message:typing':
         _handleTyping(payload);
+      case 'message:edit':
+        _handleMessageEdit(payload);
+      case 'message:delete':
+        _handleMessageDelete(payload);
       case 'message:read':
         _handleRead(payload);
       case 'presence:list':
@@ -452,6 +517,40 @@ class ChatProvider extends ChangeNotifier {
         return;
       }
     }
+  }
+
+  Future<void> _handleMessageEdit(Map<String, dynamic> payload) async {
+    final convId = payload['conversationId'] as String?;
+    final msgJson = payload['message'] as Map<String, dynamic>?;
+    if (convId == null || msgJson == null) return;
+
+    final updated = ZippMessage.fromJson(msgJson);
+
+    // Skip if this is an echo of our own edit
+    if (_sentMsgIds.remove(updated.id)) return;
+
+    final msgs = _messages[convId];
+    if (msgs == null) return;
+    final idx = msgs.indexWhere((m) => m.id == updated.id);
+    if (idx < 0) return;
+
+    await _decryptAll([updated]);
+    msgs[idx] = updated;
+    notifyListeners();
+  }
+
+  void _handleMessageDelete(Map<String, dynamic> payload) {
+    final convId = payload['conversationId'] as String?;
+    final messageId = payload['messageId'] as String?;
+    if (convId == null || messageId == null) return;
+
+    // Skip if this is an echo of our own delete
+    if (_sentMsgIds.remove(messageId)) return;
+
+    final msgs = _messages[convId];
+    if (msgs == null) return;
+    msgs.removeWhere((m) => m.id == messageId);
+    notifyListeners();
   }
 
   void _handleTyping(Map<String, dynamic> payload) {

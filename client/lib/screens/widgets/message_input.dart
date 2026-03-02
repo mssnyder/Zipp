@@ -16,7 +16,10 @@ import 'gif_picker.dart';
 class MessageInput extends StatefulWidget {
   final ZippMessage? replyingTo;
   final VoidCallback? onCancelReply;
+  final ZippMessage? editingMessage;
+  final VoidCallback? onCancelEdit;
   final Future<void> Function(String text) onSend;
+  final Future<void> Function(String messageId, String newText)? onEditSend;
   final Future<void> Function(Map<String, dynamic> gif) onSendGif;
   final Future<void> Function(Uint8List bytes, String filename, String type, String? caption) onSendAttachment;
   final String conversationId;
@@ -25,7 +28,10 @@ class MessageInput extends StatefulWidget {
     super.key,
     this.replyingTo,
     this.onCancelReply,
+    this.editingMessage,
+    this.onCancelEdit,
     required this.onSend,
+    this.onEditSend,
     required this.onSendGif,
     required this.onSendAttachment,
     required this.conversationId,
@@ -66,6 +72,19 @@ class _MessageInputState extends State<MessageInput> {
   }
 
   @override
+  void didUpdateWidget(covariant MessageInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When editingMessage changes, pre-fill the text field
+    if (widget.editingMessage != null && widget.editingMessage != oldWidget.editingMessage) {
+      _ctrl.text = widget.editingMessage!.plaintext ?? '';
+      _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
+      _focusNode.requestFocus();
+    } else if (widget.editingMessage == null && oldWidget.editingMessage != null) {
+      _ctrl.clear();
+    }
+  }
+
+  @override
   void dispose() {
     _ctrl.dispose();
     _focusNode.dispose();
@@ -95,7 +114,11 @@ class _MessageInputState extends State<MessageInput> {
     _isTyping = false;
     context.read<WebSocketService>().sendTyping(widget.conversationId, isTyping: false);
     try {
-      await widget.onSend(text);
+      if (widget.editingMessage != null && widget.onEditSend != null) {
+        await widget.onEditSend!(widget.editingMessage!.id, text);
+      } else {
+        await widget.onSend(text);
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -194,7 +217,30 @@ class _MessageInputState extends State<MessageInput> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.replyingTo != null)
+          if (widget.editingMessage != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: ZippTheme.surfaceVariant,
+              child: Row(
+                children: [
+                  const Icon(Icons.edit, size: 16, color: ZippTheme.accent2),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Editing message',
+                      style: TextStyle(color: ZippTheme.textSecondary, fontSize: 13),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: widget.onCancelEdit,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            )
+          else if (widget.replyingTo != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: ZippTheme.surfaceVariant,
@@ -202,10 +248,10 @@ class _MessageInputState extends State<MessageInput> {
                 children: [
                   const Icon(Icons.reply, size: 16, color: ZippTheme.accent2),
                   const SizedBox(width: 8),
-                  Expanded(
+                  const Expanded(
                     child: Text(
                       'Reply to message',
-                      style: const TextStyle(color: ZippTheme.textSecondary, fontSize: 13),
+                      style: TextStyle(color: ZippTheme.textSecondary, fontSize: 13),
                     ),
                   ),
                   IconButton(

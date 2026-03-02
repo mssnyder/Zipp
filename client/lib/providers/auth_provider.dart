@@ -54,6 +54,7 @@ class AuthProvider extends ChangeNotifier {
       try {
         await _ensureKeyPair();
       } catch (_) {}
+      await _api.refreshImageHeaders();
     }
     _loading = false;
     notifyListeners();
@@ -76,6 +77,7 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {} finally {
       _loginPassword = null;
     }
+    await _api.refreshImageHeaders();
     _loading = false;
     notifyListeners();
   }

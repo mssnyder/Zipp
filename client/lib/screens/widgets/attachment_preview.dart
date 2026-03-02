@@ -91,6 +91,7 @@ class _AttachmentPreviewState extends State<AttachmentPreview> {
               Expanded(
                 child: TextField(
                   controller: _captionCtrl,
+                  autofocus: true,
                   style: const TextStyle(color: ZippTheme.textPrimary, fontSize: 15),
                   decoration: InputDecoration(
                     hintText: 'Add a caption...',
