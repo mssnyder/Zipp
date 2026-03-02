@@ -199,14 +199,24 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             Stack(
               children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: ZippTheme.surfaceVariant,
-                  child: Text(
-                    widget.participantName.isNotEmpty ? widget.participantName[0].toUpperCase() : '?',
-                    style: const TextStyle(color: ZippTheme.accent1, fontWeight: FontWeight.w700),
-                  ),
-                ),
+                Builder(builder: (context) {
+                  final api = context.read<ApiService>();
+                  final avatarUrl = chat.conversations
+                      .where((c) => c.id == widget.conversationId)
+                      .map((c) => c.participant?.avatarUrl)
+                      .firstOrNull;
+                  return CircleAvatar(
+                    radius: 18,
+                    backgroundColor: ZippTheme.surfaceVariant,
+                    backgroundImage: avatarUrl != null ? NetworkImage(api.resolveUrl(avatarUrl)) : null,
+                    child: avatarUrl == null
+                        ? Text(
+                            widget.participantName.isNotEmpty ? widget.participantName[0].toUpperCase() : '?',
+                            style: const TextStyle(color: ZippTheme.accent1, fontWeight: FontWeight.w700),
+                          )
+                        : null,
+                  );
+                }),
                 if (chat.isOnline(widget.participantId))
                   Positioned(
                     right: 0,

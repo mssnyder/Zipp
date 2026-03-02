@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/conversation.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/api_service.dart';
 
 class ConversationTile extends StatelessWidget {
   final Conversation conversation;
@@ -31,7 +32,7 @@ class ConversationTile extends StatelessWidget {
           CircleAvatar(
             radius: 26,
             backgroundColor: ZippTheme.surfaceVariant,
-            backgroundImage: p?.avatarUrl != null ? NetworkImage(p!.avatarUrl!) : null,
+            backgroundImage: p?.avatarUrl != null ? NetworkImage(context.read<ApiService>().resolveUrl(p!.avatarUrl!)) : null,
             child: p?.avatarUrl == null
                 ? Text(
                     name.isNotEmpty ? name[0].toUpperCase() : '?',

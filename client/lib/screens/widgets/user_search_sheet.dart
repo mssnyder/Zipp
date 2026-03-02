@@ -84,13 +84,18 @@ class _UserSearchSheetState extends State<UserSearchSheet> {
                           itemBuilder: (ctx, i) {
                             final u = _users[i];
                             final name = u['displayName'] as String? ?? u['username'] as String;
+                            final avatarUrl = u['avatarUrl'] as String?;
+                            final api = context.read<ApiService>();
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: ZippTheme.surfaceVariant,
-                                child: Text(
-                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                  style: const TextStyle(color: ZippTheme.accent1),
-                                ),
+                                backgroundImage: avatarUrl != null ? NetworkImage(api.resolveUrl(avatarUrl)) : null,
+                                child: avatarUrl == null
+                                    ? Text(
+                                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        style: const TextStyle(color: ZippTheme.accent1),
+                                      )
+                                    : null,
                               ),
                               title: Text(name),
                               subtitle: Text(

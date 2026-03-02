@@ -234,11 +234,12 @@ class _MessageBubbleState extends State<MessageBubble> {
                   ),
                   const SizedBox(width: 4),
                 ],
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.78,
-                  ),
-                  child: Column(
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.78,
+                    ),
+                    child: Column(
                     key: _bubbleKey,
                     crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
@@ -273,6 +274,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       ),
                     ],
                   ),
+                ),
                 ),
                 if (_isDesktop && !isMine) ...[
                   const SizedBox(width: 4),
