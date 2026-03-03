@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../utils/native_clipboard.dart';
 import 'reaction_bar.dart';
+import 'video_player_screen.dart';
 
 const _quickEmojis = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
@@ -999,44 +1000,58 @@ class _VideoContent extends StatelessWidget {
     final duration = data?['duration'] as int?;
     final headers = api.imageHeaders;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            if (thumbUrl != null)
-              CachedNetworkImage(
-                imageUrl: api.resolveUrl(thumbUrl),
-                httpHeaders: headers.isNotEmpty ? headers : null,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: 200,
-              )
-            else
-              Container(height: 200, color: ZippTheme.surfaceVariant),
-            const Icon(Icons.play_circle_outline, size: 56, color: Colors.white),
-            if (duration != null)
-              Positioned(
-                bottom: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    _formatDuration(duration),
-                    style: const TextStyle(color: Colors.white, fontSize: 11),
+    final videoUrl = data?['url'] as String?;
+
+    return GestureDetector(
+      onTap: videoUrl != null
+          ? () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => VideoPlayerScreen(
+                  url: api.resolveUrl(videoUrl),
+                  headers: headers,
+                ),
+              ))
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              if (thumbUrl != null)
+                CachedNetworkImage(
+                  imageUrl: api.resolveUrl(thumbUrl),
+                  httpHeaders: headers.isNotEmpty ? headers : null,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: 200,
+                  errorWidget: (_, _, _) =>
+                      Container(height: 200, color: ZippTheme.surfaceVariant),
+                )
+              else
+                Container(height: 200, color: ZippTheme.surfaceVariant),
+              const Icon(Icons.play_circle_outline, size: 56, color: Colors.white),
+              if (duration != null)
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _formatDuration(duration),
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-        _buildCaption(data),
-      ],
+            ],
+          ),
+          _buildCaption(data),
+        ],
+      ),
     );
   }
 

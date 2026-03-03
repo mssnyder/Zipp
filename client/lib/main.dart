@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'config/theme.dart';
@@ -15,6 +16,7 @@ import 'screens/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   // Initialize desktop window + tray (no-op on web)
   await DesktopManager.instance.init();

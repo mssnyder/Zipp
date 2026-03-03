@@ -52,8 +52,11 @@ dependencies:
   desktop_drop: ^0.7.0
 
   # Video playback
-  video_player: ^2.9.3
-  chewie: ^1.8.5
+  media_kit: ^1.1.11
+  media_kit_video: ^2.0.0
+  media_kit_libs_linux: any
+  media_kit_libs_android_video: any
+  media_kit_libs_windows_video: any
 
   # Date/time formatting
   intl: ^0.20.2

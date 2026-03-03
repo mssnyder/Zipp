@@ -23,6 +23,33 @@
       };
 
       androidSdk = androidComposition.androidsdk;
+
+      # Minimal mpv dev package for building media_kit_video.
+      # Provides headers, libmpv.so, and a self-contained .pc file
+      # (no Requires: chain) so pkg-config doesn't chase transitive deps.
+      # The actual libmpv used at runtime is bundled by media_kit_libs_linux.
+      mpvDev = pkgs.runCommand "mpv-dev-minimal" { } ''
+        mkdir -p $out/lib/pkgconfig $out/include
+
+        # Headers
+        cp -r ${pkgs.mpv-unwrapped.dev}/include/mpv $out/include/
+
+        # Shared library (for the linker)
+        cp -P ${pkgs.mpv-unwrapped}/lib/libmpv.so* $out/lib/
+
+        # Self-contained pkg-config file (no Requires: line)
+        cat > $out/lib/pkgconfig/mpv.pc << EOF
+        prefix=$out
+        libdir=''${prefix}/lib
+        includedir=''${prefix}/include
+
+        Name: mpv
+        Description: mpv media player client library
+        Version: 0.0.0
+        Cflags: -I''${includedir}
+        Libs: -L''${libdir} -lmpv
+        EOF
+      '';
     in
     {
       devShells.${system}.default = pkgs.mkShell {
@@ -64,6 +91,9 @@
           zlib
           libdeflate
           lerc
+          # media_kit (video playback)
+          alsa-lib
+          mpvDev
         ];
 
         shellHook = ''
@@ -75,6 +105,13 @@
           # Flutter config
           export FLUTTER_ROOT="${pkgs.flutter}"
           export PUB_CACHE="$HOME/.pub-cache"
+
+          # Help CMake find ALSA and mpv (needed by media_kit plugins)
+          export CMAKE_PREFIX_PATH="${pkgs.alsa-lib.dev}:${pkgs.alsa-lib}:${mpvDev}:''${CMAKE_PREFIX_PATH:-}"
+
+          # Use nix-built libmpv at runtime instead of media_kit_libs_linux's
+          # bundled one (which segfaults on NixOS due to wrong RPATHs).
+          export LD_LIBRARY_PATH="${mpvDev}/lib:''${LD_LIBRARY_PATH:-}"
 
           # Suppress benign GTK/ATK noise
           export NO_AT_BRIDGE=1      # Don't try to connect to AT-SPI2 accessibility bus

@@ -19,6 +19,8 @@
   xdg-utils,
   libayatana-appindicator,
   libdbusmenu,
+  alsa-lib,
+  mpv-unwrapped,
 }:
 
 stdenv.mkDerivation {
@@ -49,6 +51,9 @@ stdenv.mkDerivation {
     # tray_manager (system tray)
     libayatana-appindicator
     libdbusmenu
+    # media_kit (video playback)
+    alsa-lib
+    mpv-unwrapped
   ];
 
   desktopItems = [

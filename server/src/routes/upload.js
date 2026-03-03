@@ -55,6 +55,9 @@ function transcodeVideo(inputPath, outputPath) {
         "-c:v h264_nvenc",   // NVIDIA GPU encoding
         "-preset p4",        // NVENC balanced quality preset
         "-cq 23",            // Constant quality
+        "-maxrate 20M",      // Cap bitrate for web delivery
+        "-bufsize 40M",      // VBV buffer (2x maxrate)
+        "-profile:v high",   // High profile for better compression at high res
         "-c:a aac",
         "-b:a 128k",
         "-movflags +faststart", // Move moov atom to front for streaming
@@ -69,6 +72,9 @@ function transcodeVideo(inputPath, outputPath) {
             "-c:v libx264",
             "-preset fast",
             "-crf 23",
+            "-maxrate 20M",      // Cap bitrate for web delivery
+            "-bufsize 40M",      // VBV buffer (2x maxrate)
+            "-profile:v high",   // High profile for better compression at high res
             "-c:a aac",
             "-b:a 128k",
             "-movflags +faststart",
@@ -94,9 +100,12 @@ function getVideoDuration(inputPath) {
 function extractVideoThumbnail(inputPath, thumbPath) {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
-      .screenshots({ count: 1, timemarks: ["5%"], filename: thumbPath, size: "480x?" })
+      .inputOptions(["-ss", "1"])
+      .outputOptions(["-frames:v", "1", "-vf", "scale=1080:-1"])
+      .output(thumbPath)
       .on("end", resolve)
-      .on("error", reject);
+      .on("error", reject)
+      .run();
   });
 }
 
@@ -160,14 +169,17 @@ export default async (app, prisma) => {
 
       try {
         await transcodeVideo(tmpPath, outPath);
-        await extractVideoThumbnail(outPath, thumbPath).catch(() => {});
+        await extractVideoThumbnail(outPath, thumbPath).catch((err) => {
+          console.error("Thumbnail extraction failed:", err);
+        });
         duration = await getVideoDuration(outPath);
       } finally {
         await unlink(tmpPath).catch(() => {});
       }
 
       url = `/uploads/attachments/${outName}`;
-      thumbUrl = `/uploads/thumbs/${thumbName}`;
+      // Only set thumbUrl if the file was actually created
+      try { statSync(join(THUMB_DIR, thumbName)); thumbUrl = `/uploads/thumbs/${thumbName}`; } catch {};
     } else {
       // Images and files — store as-is (images stay uncompressed per requirement)
       const finalName = randomName(ext);
