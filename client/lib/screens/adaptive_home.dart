@@ -204,7 +204,7 @@ class _ConversationList extends StatelessWidget {
                   .animate()
                   .fadeIn(delay: (convIdx * 40).ms)
                   .slideX(begin: 0.05, end: 0),
-              if (!desktop) const Divider(height: 1, indent: 76),
+              if (!desktop) const Divider(height: 1),
             ],
           );
         },
