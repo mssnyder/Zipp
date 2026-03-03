@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1224,9 +1223,9 @@ Future<void> _saveMediaToDisk(
     final savePath = await FilePicker.platform.saveFile(
       dialogTitle: 'Save as',
       fileName: defaultFilename,
+      bytes: bytes,
     );
     if (savePath == null) return;
-    await File(savePath).writeAsBytes(bytes);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Saved'), duration: Duration(seconds: 1)),
