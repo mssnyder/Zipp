@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
@@ -230,6 +231,15 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  bool get _isMobile {
+    if (widget.embedded) return false;
+    if (!kIsWeb) {
+      return defaultTargetPlatform == TargetPlatform.iOS ||
+             defaultTargetPlatform == TargetPlatform.android;
+    }
+    return MediaQuery.sizeOf(context).width < 720;
+  }
+
   int _lastMsgCount = 0;
 
   @override
@@ -304,7 +314,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-      body: DropTarget(
+      body: _wrapWithBackSwipe(
+        child: DropTarget(
         onDragEntered: (_) => setState(() => _isDragging = true),
         onDragExited: (_) => setState(() => _isDragging = false),
         onDragDone: (details) {
@@ -388,6 +399,28 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  Widget _wrapWithBackSwipe({required Widget child}) {
+    if (!_isMobile) return child;
+    return Dismissible(
+      key: const ValueKey('chat-back'),
+      direction: DismissDirection.startToEnd,
+      dismissThresholds: const {DismissDirection.startToEnd: 0.2},
+      confirmDismiss: (_) async {
+        Navigator.of(context).pop();
+        return false;
+      },
+      background: const Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: EdgeInsets.only(left: 20),
+          child: Icon(Icons.arrow_back, color: ZippTheme.textSecondary),
+        ),
+      ),
+      child: child,
     );
   }
 }
