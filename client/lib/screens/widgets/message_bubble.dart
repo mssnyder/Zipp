@@ -385,9 +385,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         onLongPressStart: _isDesktop || isDeleted ? null : _onLongPressStart,
         onLongPressMoveUpdate: _isDesktop || isDeleted ? null : _onLongPressMoveUpdate,
         onLongPressEnd: _isDesktop || isDeleted ? null : _onLongPressEnd,
-        child: _wrapWithSwipe(
-          isMine: isMine,
-          child: Padding(
+        child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
             child: Row(
               mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -408,57 +406,60 @@ class _MessageBubbleState extends State<MessageBubble> {
                   const SizedBox(width: 4),
                 ],
                 Flexible(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.78,
-                    ),
-                    child: Column(
-                    key: _bubbleKey,
-                    crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      _BubbleBody(message: message, isMine: isMine, isDesktop: _isDesktop),
-                      if (message.reactions.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: ReactionBar(
-                            reactions: message.reactions,
-                            myUserId: context.read<AuthProvider>().user?.id ?? '',
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              DateFormat.jm().format(message.createdAt.toLocal()),
-                              style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
-                            ),
-                            if (message.isEdited) ...[
-                              const SizedBox(width: 4),
-                              Text(
-                                'edited ${DateFormat.jm().format(message.editedAt!.toLocal())}',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: ZippTheme.textSecondary,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                            if (isMine) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                message.isRead ? Icons.done_all : Icons.done,
-                                size: 12,
-                                color: message.isRead ? ZippTheme.accent2 : ZippTheme.textSecondary,
-                              ),
-                            ],
-                          ],
-                        ),
+                  child: _wrapWithSwipe(
+                    isMine: isMine,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.78,
                       ),
-                    ],
+                      child: Column(
+                        key: _bubbleKey,
+                        crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          _BubbleBody(message: message, isMine: isMine, isDesktop: _isDesktop),
+                          if (message.reactions.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: ReactionBar(
+                                reactions: message.reactions,
+                                myUserId: context.read<AuthProvider>().user?.id ?? '',
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  DateFormat.jm().format(message.createdAt.toLocal()),
+                                  style: const TextStyle(fontSize: 10, color: ZippTheme.textSecondary),
+                                ),
+                                if (message.isEdited) ...[
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'edited ${DateFormat.jm().format(message.editedAt!.toLocal())}',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: ZippTheme.textSecondary,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                                if (isMine) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    message.isRead ? Icons.done_all : Icons.done,
+                                    size: 12,
+                                    color: message.isRead ? ZippTheme.accent2 : ZippTheme.textSecondary,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
                 ),
                 if (!isMine && !isDeleted) ...[
                   const SizedBox(width: 4),
@@ -477,7 +478,6 @@ class _MessageBubbleState extends State<MessageBubble> {
               ],
             ),
           ),
-        ),
       ),
     );
   }
@@ -506,7 +506,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
 // ── Desktop: emoji-only reaction overlay ─────────────────────────────────────
 
-class _DesktopReactionOverlay extends StatelessWidget {
+class _DesktopReactionOverlay extends StatefulWidget {
   final double top;
   final double left;
   final void Function(String emoji) onReact;
@@ -520,19 +520,26 @@ class _DesktopReactionOverlay extends StatelessWidget {
   });
 
   @override
+  State<_DesktopReactionOverlay> createState() => _DesktopReactionOverlayState();
+}
+
+class _DesktopReactionOverlayState extends State<_DesktopReactionOverlay> {
+  int _hoveredIndex = -1;
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: onDismiss,
+            onTap: widget.onDismiss,
             child: const SizedBox.expand(),
           ),
         ),
         Positioned(
-          top: top,
-          left: left,
+          top: widget.top,
+          left: widget.left,
           child: Material(
             color: Colors.transparent,
             child: Container(
@@ -552,13 +559,23 @@ class _DesktopReactionOverlay extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (int i = 0; i < _quickEmojis.length; i++)
-                    GestureDetector(
-                      onTap: () => onReact(_quickEmojis[i]),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        alignment: Alignment.center,
-                        child: Text(_quickEmojis[i], style: const TextStyle(fontSize: 22)),
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      onEnter: (_) => setState(() => _hoveredIndex = i),
+                      onExit: (_) => setState(() => _hoveredIndex = -1),
+                      child: GestureDetector(
+                        onTap: () => widget.onReact(_quickEmojis[i]),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: _hoveredIndex == i ? 42 : 36,
+                          height: _hoveredIndex == i ? 42 : 36,
+                          alignment: Alignment.center,
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 150),
+                            style: TextStyle(fontSize: _hoveredIndex == i ? 28 : 22),
+                            child: Text(_quickEmojis[i]),
+                          ),
+                        ),
                       ),
                     ),
                 ],
