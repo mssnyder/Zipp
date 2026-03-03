@@ -14,8 +14,9 @@ class ChatProvider extends ChangeNotifier {
   final ApiService _api;
   final WebSocketService _ws;
 
-  // Key pair set by AuthProvider after login
+  // Key pair & user ID set by AuthProvider after login
   SimpleKeyPair? keyPair;
+  String? currentUserId;
 
   // Public key cache: userId -> base64 pubkey
   final Map<String, String> _pubKeyCache = {};
@@ -564,6 +565,9 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _notifyNewMessage(String convId, ZippMessage msg) {
+    // Never notify for our own messages (e.g. sent from another device)
+    if (msg.senderId == currentUserId) return;
+
     final ns = NotificationService.instance;
 
     // Find conversation to get sender name

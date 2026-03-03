@@ -102,6 +102,7 @@ class _ZippAppState extends State<ZippApp> with WidgetsBindingObserver {
     _auth.tryRestoreSession().then((_) {
       if (_auth.isAuthenticated) {
         _chat.keyPair = _auth.keyPair;
+        _chat.currentUserId = _auth.user?.id;
         _ws.connect();
         _chat.loadConversations();
       }
@@ -110,6 +111,7 @@ class _ZippAppState extends State<ZippApp> with WidgetsBindingObserver {
     _auth.addListener(() {
       if (_auth.isAuthenticated) {
         _chat.keyPair = _auth.keyPair;
+        _chat.currentUserId = _auth.user?.id;
         _ws.connect();
         _chat.loadConversations();
       }

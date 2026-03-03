@@ -360,6 +360,7 @@ class _KeyRestoreBanner extends StatelessWidget {
     if (ok) {
       Navigator.pop(ctx);
       chat.keyPair = auth.keyPair;
+      chat.currentUserId = auth.user?.id;
       chat.loadConversations();
     } else {
       final errorText = isBackup

@@ -326,40 +326,33 @@ class _ChatScreenState extends State<ChatScreen> {
             Column(
               children: [
                 Expanded(
-                  child: GestureDetector(
-                    onHorizontalDragEnd: !_isMobile ? null : (details) {
-                      if ((details.primaryVelocity ?? 0) > 500) {
-                        Navigator.of(context).maybePop();
-                      }
-                    },
-                    child: chat.msgLoadingFor(widget.conversationId) && messages.isEmpty
-                        ? const Center(child: CircularProgressIndicator())
-                        : ListView.builder(
-                            controller: _scrollCtrl,
-                            reverse: true,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            itemCount: messages.length + (_loadingMore ? 1 : 0),
-                            itemBuilder: (ctx, i) {
-                              // Reversed: index 0 = bottom (newest), last index = top (oldest/spinner).
-                              if (_loadingMore && i == messages.length) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(8),
-                                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                                );
-                              }
-                              final msg = messages[messages.length - 1 - i];
-                              final isMine = msg.senderId == myId;
-                              return MessageBubble(
-                                message: msg,
-                                isMine: isMine,
-                                onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
-                                onReply: () => _onReply(msg),
-                                onEdit: (m) => _onEdit(m),
-                                onDelete: (m) => _onDelete(m),
-                              ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
-                            },
-                          ),
-                  ),
+                  child: chat.msgLoadingFor(widget.conversationId) && messages.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView.builder(
+                          controller: _scrollCtrl,
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: messages.length + (_loadingMore ? 1 : 0),
+                          itemBuilder: (ctx, i) {
+                            // Reversed: index 0 = bottom (newest), last index = top (oldest/spinner).
+                            if (_loadingMore && i == messages.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                              );
+                            }
+                            final msg = messages[messages.length - 1 - i];
+                            final isMine = msg.senderId == myId;
+                            return MessageBubble(
+                              message: msg,
+                              isMine: isMine,
+                              onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
+                              onReply: () => _onReply(msg),
+                              onEdit: (m) => _onEdit(m),
+                              onDelete: (m) => _onDelete(m),
+                            ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
+                          },
+                        ),
                 ),
                 if (typing.isNotEmpty) const TypingIndicator(),
                 MessageInput(
@@ -400,6 +393,23 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ),
                   ),
+                ),
+              ),
+            // Left-edge swipe strip for back navigation on mobile
+            if (_isMobile)
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 40,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragEnd: (details) {
+                    if ((details.primaryVelocity ?? 0) > 300) {
+                      Navigator.of(context).maybePop();
+                    }
+                  },
+                  child: const SizedBox.expand(),
                 ),
               ),
           ],

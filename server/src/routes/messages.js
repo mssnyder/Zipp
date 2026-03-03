@@ -161,12 +161,14 @@ export default async (app, prisma) => {
         data: { updatedAt: new Date() },
       });
 
-      // Broadcast to all participants via WebSocket
+      // Broadcast to other participants via WebSocket (exclude sender)
       const participants = await prisma.conversationParticipant.findMany({
         where: { conversationId: req.params.id },
         select: { userId: true },
       });
-      const userIds = participants.map((p) => p.userId);
+      const userIds = participants
+        .map((p) => p.userId)
+        .filter((id) => id !== req.auth.user.id);
       app.broadcast(userIds, "message:new", {
         conversationId: req.params.id,
         message: formatMessage(message),
