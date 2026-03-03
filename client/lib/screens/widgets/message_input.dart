@@ -146,7 +146,10 @@ class _MessageInputState extends State<MessageInput> {
         await widget.onSend(text);
       }
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) {
+        setState(() => _sending = false);
+        _focusNode.requestFocus();
+      }
     }
   }
 

@@ -53,7 +53,13 @@ class AuthProvider extends ChangeNotifier {
     if (_user != null) {
       try {
         await _ensureKeyPair();
-      } catch (_) {}
+      } catch (_) {
+        // If key setup failed and we still have no key pair, prompt the user
+        // to restore manually so they don't get stuck with encrypted messages.
+        if (_keyPair == null && !_needsKeyRestore) {
+          _needsKeyRestore = true;
+        }
+      }
       await _api.refreshImageHeaders();
     }
     _loading = false;
@@ -75,7 +81,11 @@ class AuthProvider extends ChangeNotifier {
     try {
       _loginPassword = password;
       await _ensureKeyPair();
-    } catch (_) {} finally {
+    } catch (_) {
+      if (_keyPair == null && !_needsKeyRestore) {
+        _needsKeyRestore = true;
+      }
+    } finally {
       _loginPassword = null;
     }
     await _api.refreshImageHeaders();
@@ -132,6 +142,17 @@ class AuthProvider extends ChangeNotifier {
     final serverNonce = serverKeys['keyNonce'];
     final hasServerBackup = serverEncPriv != null && serverSalt != null && serverNonce != null;
 
+    // Step 2b: if local key exists but doesn't match the server, discard the
+    // stale local key so we fall through to restore/prompt instead of
+    // overwriting the server's authoritative key.
+    if (_keyPair != null && serverPubKey != null) {
+      final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
+      if (localPub != serverPubKey) {
+        await StorageService.deletePrivateKey();
+        _keyPair = null;
+      }
+    }
+
     // Step 3: try restoring from server backup (only if we have a password)
     if (_keyPair == null && _loginPassword != null && hasServerBackup) {
       final privBytes = await CryptoService.decryptPrivateKey(
@@ -153,8 +174,6 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
       if (serverPubKey != null) {
-        // Server has a public key but no backup — another device has the key.
-        // Don't generate a new one (would make old messages unreadable).
         _needsKeyRestore = true;
         _needsKeyBackup = false;
         return;
