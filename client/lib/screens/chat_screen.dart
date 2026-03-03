@@ -314,8 +314,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-      body: _wrapWithBackSwipe(
-        child: DropTarget(
+      body: DropTarget(
         onDragEntered: (_) => setState(() => _isDragging = true),
         onDragExited: (_) => setState(() => _isDragging = false),
         onDragDone: (details) {
@@ -327,33 +326,40 @@ class _ChatScreenState extends State<ChatScreen> {
             Column(
               children: [
                 Expanded(
-                  child: chat.msgLoadingFor(widget.conversationId) && messages.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView.builder(
-                          controller: _scrollCtrl,
-                          reverse: true,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: messages.length + (_loadingMore ? 1 : 0),
-                          itemBuilder: (ctx, i) {
-                            // Reversed: index 0 = bottom (newest), last index = top (oldest/spinner).
-                            if (_loadingMore && i == messages.length) {
-                              return const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                              );
-                            }
-                            final msg = messages[messages.length - 1 - i];
-                            final isMine = msg.senderId == myId;
-                            return MessageBubble(
-                              message: msg,
-                              isMine: isMine,
-                              onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
-                              onReply: () => _onReply(msg),
-                              onEdit: (m) => _onEdit(m),
-                              onDelete: (m) => _onDelete(m),
-                            ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
-                          },
-                        ),
+                  child: GestureDetector(
+                    onHorizontalDragEnd: !_isMobile ? null : (details) {
+                      if ((details.primaryVelocity ?? 0) > 500) {
+                        Navigator.of(context).maybePop();
+                      }
+                    },
+                    child: chat.msgLoadingFor(widget.conversationId) && messages.isEmpty
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView.builder(
+                            controller: _scrollCtrl,
+                            reverse: true,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemCount: messages.length + (_loadingMore ? 1 : 0),
+                            itemBuilder: (ctx, i) {
+                              // Reversed: index 0 = bottom (newest), last index = top (oldest/spinner).
+                              if (_loadingMore && i == messages.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                );
+                              }
+                              final msg = messages[messages.length - 1 - i];
+                              final isMine = msg.senderId == myId;
+                              return MessageBubble(
+                                message: msg,
+                                isMine: isMine,
+                                onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
+                                onReply: () => _onReply(msg),
+                                onEdit: (m) => _onEdit(m),
+                                onDelete: (m) => _onDelete(m),
+                              ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
+                            },
+                          ),
+                  ),
                 ),
                 if (typing.isNotEmpty) const TypingIndicator(),
                 MessageInput(
@@ -399,28 +405,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-      ),
-    );
-  }
-
-  Widget _wrapWithBackSwipe({required Widget child}) {
-    if (!_isMobile) return child;
-    return Dismissible(
-      key: const ValueKey('chat-back'),
-      direction: DismissDirection.startToEnd,
-      dismissThresholds: const {DismissDirection.startToEnd: 0.2},
-      confirmDismiss: (_) async {
-        Navigator.of(context).pop();
-        return false;
-      },
-      background: const Align(
-        alignment: Alignment.centerLeft,
-        child: Padding(
-          padding: EdgeInsets.only(left: 20),
-          child: Icon(Icons.arrow_back, color: ZippTheme.textSecondary),
-        ),
-      ),
-      child: child,
     );
   }
 }

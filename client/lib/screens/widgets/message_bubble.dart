@@ -487,15 +487,15 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (_isDesktop) return child;
     return Dismissible(
       key: ValueKey('dismiss-${widget.message.id}'),
-      direction: isMine ? DismissDirection.startToEnd : DismissDirection.endToStart,
+      direction: isMine ? DismissDirection.endToStart : DismissDirection.startToEnd,
       confirmDismiss: (_) async {
         widget.onReply?.call();
         return false;
       },
       background: Align(
-        alignment: isMine ? Alignment.centerLeft : Alignment.centerRight,
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
         child: Padding(
-          padding: EdgeInsets.only(left: isMine ? 16 : 0, right: isMine ? 0 : 16),
+          padding: EdgeInsets.only(left: isMine ? 0 : 16, right: isMine ? 16 : 0),
           child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
         ),
       ),
