@@ -25,7 +25,6 @@ import messagesRoutes from "./routes/messages.js";
 import reactionsRoutes from "./routes/reactions.js";
 import keysRoutes from "./routes/keys.js";
 import gifsRoutes from "./routes/gifs.js";
-import tenorRoutes from "./routes/tenor.js";
 import uploadRoutes from "./routes/upload.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -159,7 +158,6 @@ await messagesRoutes(app, prisma);
 await reactionsRoutes(app, prisma);
 await keysRoutes(app, prisma);
 await gifsRoutes(app);
-await tenorRoutes(app);
 await uploadRoutes(app, prisma);
 
 // Health check

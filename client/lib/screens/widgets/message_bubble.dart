@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -46,14 +48,15 @@ class _MessageBubbleState extends State<MessageBubble> {
   OverlayEntry? _overlayEntry;
   int _highlightedIndex = -1;
 
-  bool get _isDesktop =>
-      kIsWeb ||
-      defaultTargetPlatform == TargetPlatform.linux ||
-      defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.macOS;
-
-  bool get _isAndroid =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get _isDesktop {
+    if (!kIsWeb) {
+      return defaultTargetPlatform == TargetPlatform.linux ||
+             defaultTargetPlatform == TargetPlatform.windows ||
+             defaultTargetPlatform == TargetPlatform.macOS;
+    }
+    // On web, use screen width to detect mobile vs desktop (matches adaptive_home breakpoint)
+    return MediaQuery.sizeOf(context).width >= 720;
+  }
 
   @override
   void dispose() {
@@ -113,21 +116,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
-  Future<void> _copyImageFromCache(String url) async {
-    try {
-      final file = await DefaultCacheManager().getSingleFile(url);
-      final bytes = await file.readAsBytes();
-      if (isNativeLinux) {
-        await copyImageToClipboardNative(bytes, file.path);
-      } else {
-        await Pasteboard.writeImage(bytes);
-      }
-      if (mounted) _showCopied();
-    } catch (_) {
-      Clipboard.setData(ClipboardData(text: url));
-      if (mounted) _showCopied();
-    }
-  }
+  Future<void> _copyImageFromCache(String url) =>
+      _copyImageToClipboard(url, context);
 
 
   void _showCopied() {
@@ -404,15 +394,18 @@ class _MessageBubbleState extends State<MessageBubble> {
               mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_isDesktop && isMine && !isDeleted) ...[
-                  IgnorePointer(
-                    ignoring: !_hovering,
-                    child: AnimatedOpacity(
-                      opacity: _hovering ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 150),
-                      child: _buildHoverButtons(),
-                    ),
-                  ),
+                if (isMine && !isDeleted) ...[
+                  if (_isDesktop)
+                    IgnorePointer(
+                      ignoring: !_hovering,
+                      child: AnimatedOpacity(
+                        opacity: _hovering ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 150),
+                        child: _buildHoverButtons(),
+                      ),
+                    )
+                  else
+                    _buildHoverButtons(),
                   const SizedBox(width: 4),
                 ],
                 Flexible(
@@ -468,16 +461,19 @@ class _MessageBubbleState extends State<MessageBubble> {
                   ),
                 ),
                 ),
-                if (_isDesktop && !isMine && !isDeleted) ...[
+                if (!isMine && !isDeleted) ...[
                   const SizedBox(width: 4),
-                  IgnorePointer(
-                    ignoring: !_hovering,
-                    child: AnimatedOpacity(
-                      opacity: _hovering ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 150),
-                      child: _buildHoverButtons(),
-                    ),
-                  ),
+                  if (_isDesktop)
+                    IgnorePointer(
+                      ignoring: !_hovering,
+                      child: AnimatedOpacity(
+                        opacity: _hovering ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 150),
+                        child: _buildHoverButtons(),
+                      ),
+                    )
+                  else
+                    _buildHoverButtons(),
                 ],
               ],
             ),
@@ -487,20 +483,20 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  /// Wrap with swipe-to-reply Dismissible (Android only).
+  /// Wrap with swipe-to-reply Dismissible (mobile).
   Widget _wrapWithSwipe({required bool isMine, required Widget child}) {
-    if (!_isAndroid) return child;
+    if (_isDesktop) return child;
     return Dismissible(
       key: ValueKey('dismiss-${widget.message.id}'),
-      direction: isMine ? DismissDirection.endToStart : DismissDirection.startToEnd,
+      direction: isMine ? DismissDirection.startToEnd : DismissDirection.endToStart,
       confirmDismiss: (_) async {
         widget.onReply?.call();
         return false;
       },
       background: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: isMine ? Alignment.centerLeft : Alignment.centerRight,
         child: Padding(
-          padding: EdgeInsets.only(left: isMine ? 0 : 16, right: isMine ? 16 : 0),
+          padding: EdgeInsets.only(left: isMine ? 16 : 0, right: isMine ? 0 : 16),
           child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
         ),
       ),
@@ -921,7 +917,11 @@ class _GifContent extends StatelessWidget {
     } catch (_) {}
     final url = data?['gifUrl'] as String? ?? data?['tinyUrl'] as String?;
     if (url == null) return const _EncryptedPlaceholder();
-    return Image.network(
+
+    final title = data?['title'] as String? ?? 'animation';
+    final filename = title.endsWith('.gif') ? title : '$title.gif';
+
+    Widget image = Image.network(
       url,
       fit: BoxFit.cover,
       loadingBuilder: (_, child, progress) =>
@@ -931,6 +931,20 @@ class _GifContent extends StatelessWidget {
           ),
       errorBuilder: (_, _, _) => const Icon(Icons.broken_image),
     );
+
+    if (_isNativeDesktop) {
+      image = GestureDetector(
+        onSecondaryTapUp: (details) => _showMediaContextMenu(
+          context,
+          details.globalPosition,
+          url: url,
+          defaultFilename: filename,
+        ),
+        child: image,
+      );
+    }
+
+    return image;
   }
 }
 
@@ -952,12 +966,14 @@ class _ImageContent extends StatelessWidget {
     final resolvedUrl = api.resolveUrl(url);
     final headers = api.imageHeaders;
 
-    return Column(
+    final urlFilename = Uri.tryParse(url)?.pathSegments.lastOrNull ?? 'image';
+    final defaultFilename = urlFilename.contains('.') ? urlFilename : '$urlFilename.${_mimeToExt(mime)}';
+
+    Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (isGif)
-          // Use Image.network for animated GIFs to preserve animation
           Image.network(
             resolvedUrl,
             headers: headers.isNotEmpty ? headers : null,
@@ -982,6 +998,21 @@ class _ImageContent extends StatelessWidget {
         _buildCaption(data),
       ],
     );
+
+    if (_isNativeDesktop) {
+      content = GestureDetector(
+        onSecondaryTapUp: (details) => _showMediaContextMenu(
+          context,
+          details.globalPosition,
+          url: resolvedUrl,
+          defaultFilename: defaultFilename,
+          headers: headers.isNotEmpty ? headers : null,
+        ),
+        child: content,
+      );
+    }
+
+    return content;
   }
 }
 
@@ -1002,6 +1033,11 @@ class _VideoContent extends StatelessWidget {
 
     final videoUrl = data?['url'] as String?;
 
+    final urlFilename = videoUrl != null
+        ? (Uri.tryParse(videoUrl)?.pathSegments.lastOrNull ?? 'video.mp4')
+        : 'video.mp4';
+    final defaultFilename = urlFilename.contains('.') ? urlFilename : '$urlFilename.mp4';
+
     return GestureDetector(
       onTap: videoUrl != null
           ? () => Navigator.of(context).push(MaterialPageRoute(
@@ -1010,6 +1046,16 @@ class _VideoContent extends StatelessWidget {
                   headers: headers,
                 ),
               ))
+          : null,
+      onSecondaryTapUp: (_isNativeDesktop && videoUrl != null)
+          ? (details) => _showMediaContextMenu(
+              context,
+              details.globalPosition,
+              url: api.resolveUrl(videoUrl),
+              defaultFilename: defaultFilename,
+              showCopy: false,
+              headers: headers.isNotEmpty ? headers : null,
+            )
           : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1126,6 +1172,100 @@ Widget _buildCaption(Map<String, dynamic>? data) {
       style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
     ),
   );
+}
+
+// ── Media context-menu helpers (desktop right-click) ─────────────────────────
+
+bool get _isNativeDesktop =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.linux ||
+     defaultTargetPlatform == TargetPlatform.windows);
+
+String _mimeToExt(String mime) {
+  if (mime.contains('png')) return 'png';
+  if (mime.contains('gif')) return 'gif';
+  if (mime.contains('webp')) return 'webp';
+  return 'jpg';
+}
+
+Future<void> _copyImageToClipboard(String url, BuildContext context, {Map<String, String>? headers}) async {
+  try {
+    final file = await DefaultCacheManager().getSingleFile(url, headers: headers ?? const {});
+    final bytes = await file.readAsBytes();
+    if (isNativeLinux) {
+      await copyImageToClipboardNative(bytes, file.path);
+    } else {
+      await Pasteboard.writeImage(bytes);
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+      );
+    }
+  } catch (_) {
+    Clipboard.setData(ClipboardData(text: url));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+      );
+    }
+  }
+}
+
+Future<void> _saveMediaToDisk(
+  String url,
+  String defaultFilename,
+  BuildContext context, {
+  Map<String, String>? headers,
+}) async {
+  try {
+    final file = await DefaultCacheManager().getSingleFile(url, headers: headers ?? const {});
+    final bytes = await file.readAsBytes();
+    final savePath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save as',
+      fileName: defaultFilename,
+    );
+    if (savePath == null) return;
+    await File(savePath).writeAsBytes(bytes);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved'), duration: Duration(seconds: 1)),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e'), duration: Duration(seconds: 2)),
+      );
+    }
+  }
+}
+
+Future<void> _showMediaContextMenu(
+  BuildContext context,
+  Offset position, {
+  required String url,
+  required String defaultFilename,
+  bool showCopy = true,
+  Map<String, String>? headers,
+}) async {
+  final result = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+    color: ZippTheme.surfaceVariant,
+    items: [
+      if (showCopy)
+        const PopupMenuItem(value: 'copy', child: _MenuRow(icon: Icons.copy_outlined, label: 'Copy')),
+      const PopupMenuItem(value: 'save', child: _MenuRow(icon: Icons.save_alt_outlined, label: 'Save as...')),
+    ],
+  );
+  if (result == null) return;
+  switch (result) {
+    case 'copy':
+      await _copyImageToClipboard(url, context, headers: headers);
+    case 'save':
+      await _saveMediaToDisk(url, defaultFilename, context, headers: headers);
+  }
 }
 
 class _EncryptedPlaceholder extends StatelessWidget {

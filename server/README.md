@@ -38,7 +38,7 @@ cp .env.example .env
 | `ARGON2_PEPPER` | Additional secret mixed into password hashes |
 | `GOOGLE_CLIENT_ID` | Google OAuth app client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth app client secret |
-| `KLIPY_API_KEY` | Tenor/Klipy API key for GIF search |
+| `KLIPY_API_KEY` | Klipy API key for GIF search |
 | `SMTP_HOST/PORT/USER/PASS` | SMTP relay for email verification |
 | `DATA_DIR` | Root directory for uploads and logs (default: `./`) |
 | `SERVER_URL` | Public URL of this server |

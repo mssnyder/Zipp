@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
@@ -65,11 +66,18 @@ class _ZippAppState extends State<ZippApp> with WidgetsBindingObserver {
         GoRoute(path: '/', builder: (_, _) => const AdaptiveHome()),
         GoRoute(
           path: '/chat/:convId',
-          builder: (_, state) => ChatScreen(
-            conversationId: state.pathParameters['convId']!,
-            participantId: state.uri.queryParameters['pid'] ?? '',
-            participantName: Uri.decodeComponent(state.uri.queryParameters['name'] ?? ''),
-          ),
+          pageBuilder: (ctx, state) {
+            final child = ChatScreen(
+              conversationId: state.pathParameters['convId']!,
+              participantId: state.uri.queryParameters['pid'] ?? '',
+              participantName: Uri.decodeComponent(state.uri.queryParameters['name'] ?? ''),
+            );
+            // Use CupertinoPage on mobile for edge-swipe back gesture
+            if (MediaQuery.sizeOf(ctx).width < 720) {
+              return CupertinoPage(child: child);
+            }
+            return MaterialPage(child: child);
+          },
         ),
         GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
       ],
@@ -89,6 +97,12 @@ class _ZippAppState extends State<ZippApp> with WidgetsBindingObserver {
       if (_auth.isAuthenticated) {
         _ws.connect();
         _chat.loadConversations();
+        // Reload messages for the currently open conversation so any
+        // messages received while disconnected show up immediately.
+        final activeConvId = NotificationService.instance.activeConversationId;
+        if (activeConvId != null) {
+          _chat.loadMessages(activeConvId);
+        }
       }
     };
 
