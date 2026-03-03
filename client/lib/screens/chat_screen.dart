@@ -4,6 +4,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
@@ -41,6 +42,7 @@ class _ChatScreenState extends State<ChatScreen> {
   ZippMessage? _editingMessage;
   bool _loadingMore = false;
   bool _isDragging = false;
+  Offset? _backSwipeStart;
 
   @override
   void initState() {
@@ -314,7 +316,20 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-      body: DropTarget(
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: !_isMobile ? null : (e) => _backSwipeStart = e.position,
+        onPointerUp: !_isMobile ? null : (e) {
+          if (_backSwipeStart == null) return;
+          final dx = e.position.dx - _backSwipeStart!.dx;
+          final dy = (e.position.dy - _backSwipeStart!.dy).abs();
+          _backSwipeStart = null;
+          if (dx > 80 && dx > dy * 2 && context.mounted) {
+            context.go('/');
+          }
+        },
+        onPointerCancel: (_) => _backSwipeStart = null,
+        child: DropTarget(
         onDragEntered: (_) => setState(() => _isDragging = true),
         onDragExited: (_) => setState(() => _isDragging = false),
         onDragDone: (details) {
@@ -395,25 +410,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
-            // Left-edge swipe strip for back navigation on mobile
-            if (_isMobile)
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 40,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragEnd: (details) {
-                    if ((details.primaryVelocity ?? 0) > 300) {
-                      Navigator.of(context).maybePop();
-                    }
-                  },
-                  child: const SizedBox.expand(),
-                ),
-              ),
           ],
         ),
+      ),
       ),
     );
   }
