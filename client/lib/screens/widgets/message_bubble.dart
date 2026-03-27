@@ -482,24 +482,139 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  /// Wrap with swipe-to-reply Dismissible (mobile).
+  /// Wrap with swipe-to-reply gesture (mobile).
   Widget _wrapWithSwipe({required bool isMine, required Widget child}) {
     if (_isDesktop) return child;
-    return Dismissible(
-      key: ValueKey('dismiss-${widget.message.id}'),
-      direction: isMine ? DismissDirection.endToStart : DismissDirection.startToEnd,
-      confirmDismiss: (_) async {
-        widget.onReply?.call();
-        return false;
-      },
-      background: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-        child: Padding(
-          padding: EdgeInsets.only(left: isMine ? 0 : 16, right: isMine ? 16 : 0),
-          child: Icon(Icons.reply, color: ZippTheme.accent2.withAlpha(180)),
-        ),
-      ),
+    return _SwipeToReply(
+      isMine: isMine,
+      onReply: widget.onReply,
       child: child,
+    );
+  }
+}
+
+// ── Swipe-to-reply (mobile) ───────────────────────────────────────────────────
+
+class _SwipeToReply extends StatefulWidget {
+  final bool isMine;
+  final VoidCallback? onReply;
+  final Widget child;
+
+  const _SwipeToReply({required this.isMine, this.onReply, required this.child});
+
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply>
+    with SingleTickerProviderStateMixin {
+  static const _maxDrag = 64.0;
+  static const _triggerThreshold = 40.0;
+  // Ignore swipes starting within this distance from the screen edge to
+  // avoid fighting with the system back-navigation gesture.
+  static const _edgeGuard = 40.0;
+
+  double _dragOffset = 0;
+  bool _rejected = false;
+  bool _triggered = false;
+  late final AnimationController _resetCtrl;
+  late Animation<double> _resetAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    )..addListener(() {
+        setState(() => _dragOffset = _resetAnim.value);
+      });
+  }
+
+  @override
+  void dispose() {
+    _resetCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onStart(DragStartDetails details) {
+    _resetCtrl.stop();
+    _triggered = false;
+    // Reject swipes that start near the left edge (received messages swipe
+    // right, which conflicts with the system back gesture).
+    if (!widget.isMine && details.localPosition.dx < _edgeGuard) {
+      _rejected = true;
+    } else {
+      _rejected = false;
+    }
+  }
+
+  void _onUpdate(DragUpdateDetails details) {
+    if (_rejected) return;
+    final delta = details.primaryDelta ?? 0;
+    if (widget.isMine) {
+      // Swipe left (negative offset)
+      _dragOffset = (_dragOffset + delta).clamp(-_maxDrag, 0);
+    } else {
+      // Swipe right (positive offset)
+      _dragOffset = (_dragOffset + delta).clamp(0, _maxDrag);
+    }
+    if (!_triggered && _dragOffset.abs() >= _triggerThreshold) {
+      _triggered = true;
+      HapticFeedback.lightImpact();
+    }
+    setState(() {});
+  }
+
+  void _onEnd(DragEndDetails details) {
+    if (_triggered && !_rejected) {
+      widget.onReply?.call();
+    }
+    _resetAnim = Tween(begin: _dragOffset, end: 0.0).animate(
+      CurvedAnimation(parent: _resetCtrl, curve: Curves.easeOut),
+    );
+    _resetCtrl.forward(from: 0);
+    _rejected = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (_dragOffset.abs() / _triggerThreshold).clamp(0.0, 1.0);
+    return GestureDetector(
+      onHorizontalDragStart: _onStart,
+      onHorizontalDragUpdate: _onUpdate,
+      onHorizontalDragEnd: _onEnd,
+      child: Stack(
+        children: [
+          // Reply icon behind the message
+          if (_dragOffset.abs() > 4)
+            Positioned.fill(
+              child: Align(
+                alignment: widget.isMine
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: widget.isMine ? 0 : 12,
+                    right: widget.isMine ? 12 : 0,
+                  ),
+                  child: Opacity(
+                    opacity: progress,
+                    child: Transform.scale(
+                      scale: 0.6 + 0.4 * progress,
+                      child: Icon(Icons.reply,
+                          color: ZippTheme.accent2.withAlpha(180)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(_dragOffset, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
     );
   }
 }

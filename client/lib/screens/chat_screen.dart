@@ -316,19 +316,16 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-      body: Listener(
+      body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onPointerDown: !_isMobile ? null : (e) => _backSwipeStart = e.position,
-        onPointerUp: !_isMobile ? null : (e) {
-          if (_backSwipeStart == null) return;
-          final dx = e.position.dx - _backSwipeStart!.dx;
-          final dy = (e.position.dy - _backSwipeStart!.dy).abs();
+        onHorizontalDragStart: !_isMobile ? null : (d) => _backSwipeStart = d.globalPosition,
+        onHorizontalDragEnd: !_isMobile ? null : (d) {
           _backSwipeStart = null;
-          if (dx > 80 && dx > dy * 2 && context.mounted) {
+          if ((d.primaryVelocity ?? 0) > 300 && context.mounted) {
             context.go('/');
           }
         },
-        onPointerCancel: (_) => _backSwipeStart = null,
+        onHorizontalDragCancel: !_isMobile ? null : () => _backSwipeStart = null,
         child: DropTarget(
         onDragEntered: (_) => setState(() => _isDragging = true),
         onDragExited: (_) => setState(() => _isDragging = false),
