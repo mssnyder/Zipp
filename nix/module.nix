@@ -93,7 +93,8 @@ in
 
     user = lib.mkOption {
       type = lib.types.str;
-      description = "System user that runs the Zipp server.";
+      default = "zipp";
+      description = "System user that runs the Zipp server. Created automatically if it does not exist.";
     };
 
     dataDir = lib.mkOption {
@@ -286,23 +287,25 @@ in
   config = lib.mkIf cfg.enable {
     # ── Data directories ──────────────────────────────────────────────
     systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir}                    0751 ${cfg.user} users -"
-      "d ${cfg.dataDir}/uploads            0750 ${cfg.user} users -"
-      "d ${cfg.dataDir}/uploads/attachments 0750 ${cfg.user} users -"
-      "d ${cfg.dataDir}/uploads/thumbs     0750 ${cfg.user} users -"
-      "d ${cfg.dataDir}/uploads/avatars    0750 ${cfg.user} users -"
-      "d ${cfg.dataDir}/logs               0750 ${cfg.user} users -"
+      "d ${cfg.dataDir}                    0751 ${cfg.user} ${cfg.user} -"
+      "d ${cfg.dataDir}/uploads            0750 ${cfg.user} ${cfg.user} -"
+      "d ${cfg.dataDir}/uploads/attachments 0750 ${cfg.user} ${cfg.user} -"
+      "d ${cfg.dataDir}/uploads/thumbs     0750 ${cfg.user} ${cfg.user} -"
+      "d ${cfg.dataDir}/uploads/avatars    0750 ${cfg.user} ${cfg.user} -"
+      "d ${cfg.dataDir}/logs               0750 ${cfg.user} ${cfg.user} -"
     ];
 
-    # ── Systemd user service (rootless) ───────────────────────────────
-    systemd.user.services.zipp = {
+    # ── Systemd system service ────────────────────────────────────────
+    systemd.services.zipp = {
       description = "Zipp Messaging Server";
-      after = [ "network-online.target" ];
+      after = [ "network-online.target" "postgresql.service" ];
       wants = [ "network-online.target" ];
-      wantedBy = [ "default.target" ];
+      wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
         Type = "simple";
+        User = cfg.user;
+        Group = cfg.user;
         WorkingDirectory = "${zipp-server}/lib/node_modules/zipp-server";
         ExecStart = "${startupScript}";
         ReadWritePaths = [ cfg.dataDir ];
@@ -311,8 +314,6 @@ in
         StandardOutput = "journal";
         StandardError = "journal";
       };
-
-      unitConfig.ConditionUser = cfg.user;
     };
 
     # ── Nginx reverse proxy ───────────────────────────────────────────
@@ -391,6 +392,15 @@ in
         };
       };
     };
+
+    # ── Dedicated service user ────────────────────────────────────────
+    users.users.${cfg.user} = lib.mkIf (cfg.user == "zipp") {
+      isSystemUser = true;
+      group = cfg.user;
+      home = cfg.dataDir;
+      description = "Zipp messaging server";
+    };
+    users.groups.${cfg.user} = lib.mkIf (cfg.user == "zipp") {};
 
     # ── ACME / Let's Encrypt ──────────────────────────────────────────
     security.acme = {
