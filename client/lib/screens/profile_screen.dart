@@ -371,10 +371,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // ── Set encryption password (for OAuth-only accounts) ─────────
                 if (!user.hasPassword) ...[
                   const SizedBox(height: 24),
-                  Text('Set encryption password', style: Theme.of(context).textTheme.titleMedium),
+                  Text('Add a password (optional)', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   Text(
-                    'A password is required to encrypt your private key so messages can be decrypted on other devices.',
+                    'Your encryption key is already backed up with your recovery key. '
+                    'You can optionally add a password to your account as well.',
                     style: TextStyle(fontSize: 13, color: ZippTheme.textSecondary),
                   ),
                   const SizedBox(height: 16),
