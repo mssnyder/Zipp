@@ -6,13 +6,13 @@
   lib,
   stdenv,
   fetchzip,
-  clientRelease ? "client-20260328-888c4376",
+  clientRelease ? "client-20260328-6e5782c7",
 }:
 
 let
   src = fetchzip {
     url = "https://github.com/mssnyder/Zipp/releases/download/${clientRelease}/zipp-web.tar.gz";
-    hash = "sha256-Q86xQxQ3RM+fTK+j3YDIdu2K9CFA1s17BzuyAbHnVJo=";
+    hash = "sha256-MNwx4q0jzvMkhIlj9UKDqlubuxmHwGcexd0wOOtHWoE=";
     stripRoot = false;
   };
 in
