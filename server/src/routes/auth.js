@@ -17,6 +17,23 @@ function pruneExpiredNLTs() {
 }
 setInterval(pruneExpiredNLTs, 60_000);
 
+async function generateUsername(firstName, lastName, email, prisma) {
+  let base = `${firstName || ""}${lastName || ""}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  if (base.length < 3) base = email.split("@")[0].replace(/[^a-z0-9_]/g, "");
+  if (base.length < 3) base = "user";
+  base = base.substring(0, 20);
+  let username = base;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const taken = await prisma.user.findFirst({
+      where: { username: { equals: username, mode: "insensitive" } },
+    });
+    if (!taken) return username;
+    const suffix = Math.floor(1000 + Math.random() * 9000);
+    username = `${base}_${suffix}`;
+  }
+  return `user_${randomBytes(4).toString("hex")}`;
+}
+
 const registerSchema = yup.object({
   email: yup.string().email().required(),
   username: yup
@@ -34,16 +51,6 @@ const loginSchema = yup.object({
   password: yup.string().required(),
 });
 
-const oauthCompleteSchema = yup.object({
-  username: yup
-    .string()
-    .min(3)
-    .max(30)
-    .matches(/^[a-zA-Z0-9_]+$/, "alphanumeric and underscores only")
-    .required(),
-  displayName: yup.string().max(50).optional(),
-  password: yup.string().min(8).max(100).required("Password is required for end-to-end encryption"),
-});
 
 function formatUser(user) {
   return {
@@ -315,7 +322,7 @@ export default (app, prisma) => {
   async function handleGoogleLogin({ sub, email, firstName, lastName }, req, reply) {
     const nlt = req.session?.nlt;
 
-    const account = await prisma.account.findUnique({
+    let account = await prisma.account.findUnique({
       where: { provider_providerAccountId: { provider: "google", providerAccountId: sub } },
       include: { user: true },
     });
@@ -331,9 +338,35 @@ export default (app, prisma) => {
         return reply.code(403).send({ error: "Signups are disabled" });
       }
 
-      // nlt is already in req.session — it will persist through to complete-profile
-      req.session.oauthPending = { provider: "google", providerAccountId: sub, email, firstName, lastName };
-      return reply.redirect(`${process.env.FRONTEND_URL}/complete-profile`);
+      // Auto-create user from Google profile
+      const username = await generateUsername(firstName, lastName, email, prisma);
+      const newUser = await prisma.$transaction(async (tx) => {
+        const u = await tx.user.create({
+          data: {
+            email,
+            username,
+            displayName: `${firstName || ""} ${lastName || ""}`.trim() || username,
+            hashedPassword: null,
+            emailVerified: true,
+          },
+        });
+        await tx.account.create({
+          data: { provider: "google", providerAccountId: sub, userId: u.id },
+        });
+        return u;
+      });
+
+      if (nlt) {
+        const entry = nativeLoginTokens.get(nlt);
+        if (entry && entry.expiresAt > Date.now()) {
+          entry.userId = newUser.id;
+        }
+        return reply.type("text/html").send(NLT_SUCCESS_HTML);
+      }
+
+      req.regenerateSession();
+      req.session.userId = newUser.id;
+      return reply.redirect(process.env.FRONTEND_URL);
     }
 
     // Existing user — native login: store userId against token, show success page
@@ -374,62 +407,4 @@ export default (app, prisma) => {
     return reply.redirect(`${process.env.FRONTEND_URL}/profile?linked=google`);
   }
 
-  // POST /api/auth/complete-profile (after Google OAuth for new users)
-  app.route({
-    method: "POST",
-    url: "/api/auth/complete-profile",
-    config: { rateLimit: { max: RATE_LIMITS.OAUTH_COMPLETE_MAX, timeWindow: RATE_LIMITS.OAUTH_COMPLETE_WINDOW } },
-    handler: async (req, reply) => {
-      const pending = req.session.oauthPending;
-      if (!pending) return reply.code(400).send({ error: "No pending OAuth session" });
-
-      const body = await oauthCompleteSchema
-        .validate(req.body, { abortEarly: false })
-        .catch((err) => {
-          reply.code(400).send({ error: err.errors.join(", ") });
-          return null;
-        });
-      if (!body) return reply;
-
-      const { username, displayName, password } = body;
-      const { provider, providerAccountId, email, firstName, lastName } = pending;
-
-      const taken = await prisma.user.findFirst({
-        where: { username: { equals: username, mode: "insensitive" } },
-      });
-      if (taken) return reply.code(400).send({ error: "Username already taken" });
-
-      const user = await prisma.$transaction(async (tx) => {
-        const u = await tx.user.create({
-          data: {
-            email,
-            username,
-            displayName: displayName || `${firstName} ${lastName}`.trim() || username,
-            hashedPassword: await hashPassword(password),
-            emailVerified: true, // Google emails are verified
-          },
-        });
-        await tx.account.create({
-          data: { provider, providerAccountId, userId: u.id },
-        });
-        return u;
-      });
-
-      // Save nlt before regeneration (native desktop login flow)
-      const nlt = req.session.nlt;
-      delete req.session.oauthPending;
-      req.regenerateSession();
-      req.session.userId = user.id;
-
-      // Associate user with the native login token so the desktop app can pick it up
-      if (nlt) {
-        const entry = nativeLoginTokens.get(nlt);
-        if (entry && entry.expiresAt > Date.now()) {
-          entry.userId = user.id;
-        }
-      }
-
-      return { user: formatUser(user) };
-    },
-  });
 };
