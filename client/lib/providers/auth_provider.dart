@@ -26,6 +26,10 @@ class AuthProvider extends ChangeNotifier {
   /// Cleared immediately after use.
   String? _loginPassword;
 
+  /// Recovery key generated for OAuth users (no password). Non-null only
+  /// immediately after first login — the UI must show it once then clear it.
+  String? _pendingRecoveryKey;
+
   AuthProvider(this._api);
 
   ZippUser? get user => _user;
@@ -35,6 +39,12 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   bool get needsKeyRestore => _needsKeyRestore;
   bool get needsKeyBackup => _needsKeyBackup;
+  String? get pendingRecoveryKey => _pendingRecoveryKey;
+
+  void clearPendingRecoveryKey() {
+    _pendingRecoveryKey = null;
+    notifyListeners();
+  }
 
   void _setLoading(bool v) { _loading = v; notifyListeners(); }
   void _setError(String? e) { _error = e; notifyListeners(); }
@@ -118,8 +128,10 @@ class AuthProvider extends ChangeNotifier {
     _user = null;
     _keyPair = null;
     _loginPassword = null;
+    _pendingRecoveryKey = null;
     await StorageService.clearSession();
     await StorageService.deletePrivateKey();
+    await StorageService.deleteRecoveryKey();
     notifyListeners();
   }
 
@@ -210,12 +222,36 @@ class AuthProvider extends ChangeNotifier {
       _needsKeyBackup = false;
     }
 
-    // If we have a local key but no server backup and no password to create one,
-    // flag that the user should create a backup.
+    // If we have a local key but no server backup and no password to create one
+    // (OAuth user), auto-generate a recovery key and upload a backup with it.
     if (!hasServerBackup && _loginPassword == null) {
-      _needsKeyBackup = true;
+      await _autoGenerateRecoveryKey();
     } else {
       _needsKeyBackup = false;
+    }
+  }
+
+  /// Generates a recovery key, uploads the encrypted key backup, and sets
+  /// [_pendingRecoveryKey] so the UI can show it once.
+  Future<void> _autoGenerateRecoveryKey() async {
+    if (_keyPair == null) return;
+    try {
+      final recoveryKey = CryptoService.generateRecoveryKey();
+      final privBytes = await _keyPair!.extractPrivateKeyBytes();
+      final backup = await CryptoService.encryptPrivateKey(privBytes, recoveryKey);
+      final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
+      await _api.uploadPublicKey(
+        localPub,
+        encryptedPrivateKey: backup.encryptedPrivateKey,
+        keySalt: backup.keySalt,
+        keyNonce: backup.keyNonce,
+      );
+      await StorageService.setRecoveryKey(recoveryKey);
+      _pendingRecoveryKey = recoveryKey;
+      _needsKeyBackup = false;
+    } catch (_) {
+      // If backup upload fails, fall back to prompting manually
+      _needsKeyBackup = true;
     }
   }
 

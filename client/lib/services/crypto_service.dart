@@ -236,11 +236,30 @@ class CryptoService {
     return SecretKey(keyBytes);
   }
 
+  /// Generate a random recovery key: 6 groups of 4 base58 chars, space-separated.
+  /// ~140 bits of entropy — enough for offline brute-force resistance.
+  static String generateRecoveryKey() {
+    const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    final rng = Random.secure();
+    final buf = StringBuffer();
+    for (int g = 0; g < 6; g++) {
+      if (g > 0) buf.write(' ');
+      for (int c = 0; c < 4; c++) {
+        buf.write(alphabet[rng.nextInt(alphabet.length)]);
+      }
+    }
+    return buf.toString();
+  }
+
+  /// Strip spaces so a recovery key entered with or without spaces works.
+  static String normalizeWrappingSecret(String input) => input.replaceAll(' ', '');
+
   /// Encrypt a private key with a password-derived wrapping key.
   /// Returns base64url-encoded encrypted blob, salt, and nonce.
   /// Runs PBKDF2 in an isolate to avoid blocking the UI.
   static Future<({String encryptedPrivateKey, String keySalt, String keyNonce})>
       encryptPrivateKey(List<int> privKeyBytes, String password) async {
+    password = normalizeWrappingSecret(password);
     final rng = Random.secure();
     final salt = Uint8List.fromList(List.generate(16, (_) => rng.nextInt(256)));
 
@@ -263,6 +282,7 @@ class CryptoService {
   static Future<List<int>?> decryptPrivateKey(
     String encryptedB64, String saltB64, String nonceB64, String password,
   ) async {
+    password = normalizeWrappingSecret(password);
     try {
       final salt = base64Url.decode(saltB64);
       final wrappingKey = await _deriveWrappingKeyInIsolate(password, salt);

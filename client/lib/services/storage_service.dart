@@ -10,11 +10,17 @@ class StorageService {
 
   static const _privateKeyKey = 'zipp_private_key';
   static const _sessionKey = 'zipp_session_cookie';
+  static const _recoveryKeyKey = 'zipp_recovery_key';
 
   // Private key (X25519) — stored in platform secure storage
   static Future<String?> getPrivateKey() => _storage.read(key: _privateKeyKey);
   static Future<void> setPrivateKey(String key) => _storage.write(key: _privateKeyKey, value: key);
   static Future<void> deletePrivateKey() => _storage.delete(key: _privateKeyKey);
+
+  // Recovery key (for OAuth users without a password)
+  static Future<String?> getRecoveryKey() => _storage.read(key: _recoveryKeyKey);
+  static Future<void> setRecoveryKey(String key) => _storage.write(key: _recoveryKeyKey, value: key);
+  static Future<void> deleteRecoveryKey() => _storage.delete(key: _recoveryKeyKey);
 
   // Session cookie — stored in secure storage too
   static Future<String?> getSessionCookie() => _storage.read(key: _sessionKey);

@@ -8,13 +8,44 @@ import '../providers/chat_provider.dart';
 import 'chat_screen.dart';
 import 'widgets/conversation_tile.dart';
 import 'widgets/create_group_sheet.dart';
+import 'widgets/recovery_key_dialog.dart';
 import 'widgets/user_search_sheet.dart';
 
 const _kDesktopBreakpoint = 720.0;
 const _kSidebarWidth = 320.0;
 
-class AdaptiveHome extends StatelessWidget {
+class AdaptiveHome extends StatefulWidget {
   const AdaptiveHome({super.key});
+
+  @override
+  State<AdaptiveHome> createState() => _AdaptiveHomeState();
+}
+
+class _AdaptiveHomeState extends State<AdaptiveHome> {
+  bool _shownRecoveryDialog = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    if (!_shownRecoveryDialog && auth.pendingRecoveryKey != null) {
+      _shownRecoveryDialog = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => RecoveryKeyDialog(
+            recoveryKey: auth.pendingRecoveryKey!,
+            onAcknowledged: () {
+              auth.clearPendingRecoveryKey();
+              Navigator.pop(context);
+            },
+          ),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -248,10 +279,12 @@ class _KeyRestoreBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isBackup = auth.needsKeyBackup && !auth.needsKeyRestore;
+    final hasPassword = auth.user?.hasPassword ?? true;
+    final secretLabel = hasPassword ? 'password' : 'recovery key';
     final title = isBackup ? 'Back up encryption key' : 'Encryption key needed';
     final subtitle = isBackup
-        ? 'Enter your password to back up your key for other devices.'
-        : 'Enter your password to decrypt messages.';
+        ? 'Enter your $secretLabel to back up your key for other devices.'
+        : 'Enter your $secretLabel to decrypt messages.';
     final buttonLabel = isBackup ? 'Back up' : 'Unlock';
 
     return Container(
@@ -300,10 +333,12 @@ class _KeyRestoreBanner extends StatelessWidget {
     var loading = false;
     String? errorMsg;
     final isBackup = auth.needsKeyBackup && !auth.needsKeyRestore;
+    final hasPassword = auth.user?.hasPassword ?? true;
+    final secretLabel = hasPassword ? 'password' : 'recovery key';
     final dialogTitle = isBackup ? 'Back up encryption key' : 'Unlock encryption';
     final dialogDesc = isBackup
-        ? 'Enter your account password to back up your encryption key for use on other devices.'
-        : 'Enter your account password to restore your encryption key.';
+        ? 'Enter your $secretLabel to back up your encryption key for use on other devices.'
+        : 'Enter your $secretLabel to restore your encryption key.';
     final buttonText = isBackup ? 'Back up' : 'Unlock';
 
     showDialog(
@@ -319,9 +354,9 @@ class _KeyRestoreBanner extends StatelessWidget {
               const SizedBox(height: 16),
               TextField(
                 controller: controller,
-                obscureText: true,
+                obscureText: hasPassword,
                 decoration: InputDecoration(
-                  labelText: 'Password',
+                  labelText: hasPassword ? 'Password' : 'Recovery key',
                   errorText: errorMsg,
                 ),
                 onSubmitted: loading ? null : (_) => _restore(ctx, controller, setState, (l) => loading = l, (e) => errorMsg = e, isBackup),
