@@ -1,23 +1,23 @@
 import 'package:flutter/foundation.dart';
+import 'server_url_stub.dart' if (dart.library.io) 'server_url_native.dart';
 
 class ZippConfig {
-  static const String _productionUrl = 'https://ZIPP_SERVER_DOMAIN';
-
-  // On web, use same-origin relative paths so the app works when served from the server.
-  // On native desktop, use the absolute production URL.
-  static String get serverUrl => kIsWeb ? '' : _productionUrl;
+  /// On web, use same-origin relative paths (empty string).
+  /// On desktop, read from the ZIPP_SERVER_URL environment variable.
+  static String get serverUrl => kIsWeb ? '' : nativeServerUrl();
 
   static String get wsUrl {
     if (kIsWeb) {
       final base = Uri.base;
       final scheme = base.scheme == 'https' ? 'wss' : 'ws';
-      final port = (base.port == 443 || base.port == 80 || base.port == 0) ? '' : ':${base.port}';
+      final port = (base.port == 443 || base.port == 80 || base.port == 0)
+          ? ''
+          : ':${base.port}';
       return '$scheme://${base.host}$port/ws';
     }
-    return 'wss://ZIPP_SERVER_DOMAIN/ws';
+    final uri = Uri.parse(serverUrl);
+    final scheme = uri.scheme == 'https' ? 'wss' : 'ws';
+    final port = uri.hasPort ? ':${uri.port}' : '';
+    return '$scheme://${uri.host}$port/ws';
   }
-
-  // In dev, override with your local machine IP:
-  // static String get serverUrl => kIsWeb ? '' : 'http://192.168.8.172:4200';
-  // static String get wsUrl => kIsWeb ? ... : 'ws://192.168.8.172:4200/ws';
 }

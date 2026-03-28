@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_DIR="$HOME/nixos/apps/zipp"
+DEPLOY_DIR="$SCRIPT_DIR/bundle"
 BUNDLE_DIR="build/linux/x64/release/bundle"
 
 cd "$SCRIPT_DIR"
@@ -32,15 +32,9 @@ if [ ! -f "$BUNDLE_DIR/zipp" ]; then
     exit 1
 fi
 
-mkdir -p "$DEPLOY_DIR"
-
 echo "==> Syncing bundle to $DEPLOY_DIR..."
-if ! rsync -a --delete "$BUNDLE_DIR/" "$DEPLOY_DIR/"; then
-    echo "FAILED: rsync deploy" >&2
-    exit 1
-fi
+mkdir -p "$DEPLOY_DIR"
+rsync -a --delete "$BUNDLE_DIR/" "$DEPLOY_DIR/"
 
-echo "==> Copying default.nix..."
-cp "$SCRIPT_DIR/default.nix" "$DEPLOY_DIR/default.nix"
-
-echo "==> Done. Linux app deployed to $DEPLOY_DIR"
+echo "==> Done. Linux bundle deployed to $DEPLOY_DIR"
+echo "    Commit client/bundle/ and rebuild NixOS to apply."

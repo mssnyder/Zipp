@@ -74,23 +74,17 @@ npx nodemon src/server.js
 
 ## Production / NixOS deployment
 
-The server runs as a systemd user service managed by NixOS. There is no manual deploy step for the server process itself — push your changes to the repo and restart the service:
+See the [top-level README](../README.md) for NixOS module setup.  The server runs as a rootless systemd user service.
+
+To restart after config changes:
 
 ```bash
 systemctl --user restart zipp
 ```
 
-The NixOS module is at `nixos/devices/desktop/modules/zipp.nix`. It:
-
-- Creates the data directories under `/var/lib/zipp/`
-- Runs `node src/server.js` with `DATA_DIR=/var/lib/zipp`
-- Reads secrets from `server/.env`
-- Configures Nginx to proxy `/api`, `/ws`, `/uploads/`, `/connect/` to this server and serve the Flutter web SPA at `/`
-
 ### Updating the database schema in production
 
 ```bash
-cd ~/Dev/Zipp/server
 npx prisma migrate deploy
 systemctl --user restart zipp
 ```
