@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import 'chat_screen.dart';
 import 'widgets/conversation_tile.dart';
+import 'widgets/create_group_sheet.dart';
 import 'widgets/user_search_sheet.dart';
 
 const _kDesktopBreakpoint = 720.0;
@@ -55,7 +56,7 @@ class _MobileLayout extends StatelessWidget {
       ),
       body: _ConversationList(chat: chat, desktop: false),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showUserSearch(context),
+        onPressed: () => _showNewChatMenu(context),
         backgroundColor: ZippTheme.accent1,
         child: const Icon(Icons.edit_outlined, color: Colors.white),
       ),
@@ -111,7 +112,13 @@ class _DesktopLayout extends StatelessWidget {
                         },
                       ),
                       IconButton(
+                        icon: const Icon(Icons.group_add_outlined),
+                        tooltip: 'New Group',
+                        onPressed: () => _showCreateGroup(context),
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'New Chat',
                         onPressed: () => _showUserSearch(context),
                       ),
                     ],
@@ -379,5 +386,52 @@ void _showUserSearch(BuildContext context) {
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (_) => const UserSearchSheet(),
+  );
+}
+
+void _showCreateGroup(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: ZippTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (_) => const CreateGroupSheet(),
+  );
+}
+
+void _showNewChatMenu(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: ZippTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (_) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.person_add_outlined, color: ZippTheme.accent1),
+            title: const Text('New Chat'),
+            subtitle: const Text('Start a direct message', style: TextStyle(fontSize: 12, color: ZippTheme.textSecondary)),
+            onTap: () {
+              Navigator.pop(context);
+              _showUserSearch(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.group_add_outlined, color: ZippTheme.accent1),
+            title: const Text('New Group'),
+            subtitle: const Text('Create a group conversation', style: TextStyle(fontSize: 12, color: ZippTheme.textSecondary)),
+            onTap: () {
+              Navigator.pop(context);
+              _showCreateGroup(context);
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
   );
 }

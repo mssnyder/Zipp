@@ -24,11 +24,14 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  accounts     Account[]
-  sessions     Session[]
-  sentMessages Message[]                 @relation("sender")
-  reactions    Reaction[]
-  participants ConversationParticipant[]
+  accounts        Account[]
+  sessions        Session[]
+  sentMessages    Message[]                 @relation("sender")
+  reactions       Reaction[]
+  participants    ConversationParticipant[]
+  epochsCreated   ConversationEpoch[]       @relation("EpochCreator")
+  epochKeys       EpochKey[]                @relation("EpochKeyOwner")
+  epochKeysWrapped EpochKey[]               @relation("EpochKeyWrapper")
 }
 
 model Account {
@@ -58,22 +61,65 @@ model Session {
 
 model Conversation {
   id        String   @id @default(cuid())
+  isGroup   Boolean  @default(false)
+  name      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   participants ConversationParticipant[]
   messages     Message[]
+  epochs       ConversationEpoch[]
+}
+
+enum ConversationRole {
+  MEMBER
+  ADMIN
 }
 
 model ConversationParticipant {
   conversationId String
   userId         String
-  joinedAt       DateTime @default(now())
+  role           ConversationRole @default(MEMBER)
+  joinedAt       DateTime         @default(now())
+  leftAt         DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([conversationId, userId])
+}
+
+model ConversationEpoch {
+  id             String   @id @default(cuid())
+  conversationId String
+  epochNumber    Int
+  createdAt      DateTime @default(now())
+  createdById    String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("EpochCreator", fields: [createdById], references: [id])
+  keys         EpochKey[]
+  messages     Message[]
+
+  @@unique([conversationId, epochNumber])
+  @@index([conversationId])
+}
+
+model EpochKey {
+  id           String @id @default(cuid())
+  epochId      String
+  userId       String
+  encryptedKey String
+  keyNonce     String
+  wrappedById  String
+
+  epoch     ConversationEpoch @relation(fields: [epochId], references: [id], onDelete: Cascade)
+  user      User              @relation("EpochKeyOwner", fields: [userId], references: [id], onDelete: Cascade)
+  wrappedBy User              @relation("EpochKeyWrapper", fields: [wrappedById], references: [id])
+
+  @@unique([epochId, userId])
+  @@index([epochId])
+  @@index([userId])
 }
 
 model Message {
@@ -82,7 +128,9 @@ model Message {
   senderId            String
   recipientCiphertext String?
   senderCiphertext    String?
+  ciphertext          String?
   nonce               String?
+  epochId             String?
   type                MessageType @default(TEXT)
   replyToId           String?
   readAt              DateTime?
@@ -90,13 +138,15 @@ model Message {
   deletedAt           DateTime?
   createdAt           DateTime    @default(now())
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User         @relation("sender", fields: [senderId], references: [id])
-  replyTo      Message?     @relation("replies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies      Message[]    @relation("replies")
+  conversation Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User               @relation("sender", fields: [senderId], references: [id])
+  epoch        ConversationEpoch? @relation(fields: [epochId], references: [id], onDelete: SetNull)
+  replyTo      Message?           @relation("replies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]          @relation("replies")
   reactions    Reaction[]
 
   @@index([conversationId, createdAt])
+  @@index([epochId])
 }
 
 enum MessageType {

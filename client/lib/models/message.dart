@@ -1,3 +1,4 @@
+import 'conversation.dart';
 import 'reaction.dart';
 
 enum MessageType { text, gif, image, video, file }
@@ -5,10 +6,16 @@ enum MessageType { text, gif, image, video, file }
 class MessageReplyPreview {
   final String id;
   final String senderId;
-  final String recipientCiphertext;
-  final String senderCiphertext;
-  final String nonce;
+  // DM fields
+  final String? recipientCiphertext;
+  final String? senderCiphertext;
+  // Group field
+  final String? ciphertext;
+  final String? nonce;
   final MessageType type;
+  // Epoch
+  final String? epochId;
+  final EpochKeyData? epochKey;
 
   // Decrypted plaintext — populated client-side after decryption
   String? plaintext;
@@ -16,10 +23,13 @@ class MessageReplyPreview {
   MessageReplyPreview({
     required this.id,
     required this.senderId,
-    required this.recipientCiphertext,
-    required this.senderCiphertext,
-    required this.nonce,
+    this.recipientCiphertext,
+    this.senderCiphertext,
+    this.ciphertext,
+    this.nonce,
     required this.type,
+    this.epochId,
+    this.epochKey,
     this.plaintext,
   });
 
@@ -27,10 +37,15 @@ class MessageReplyPreview {
       MessageReplyPreview(
         id: json['id'] as String,
         senderId: json['senderId'] as String,
-        recipientCiphertext: json['recipientCiphertext'] as String,
-        senderCiphertext: json['senderCiphertext'] as String,
-        nonce: json['nonce'] as String,
+        recipientCiphertext: json['recipientCiphertext'] as String?,
+        senderCiphertext: json['senderCiphertext'] as String?,
+        ciphertext: json['ciphertext'] as String?,
+        nonce: json['nonce'] as String?,
         type: _parseType(json['type'] as String?),
+        epochId: json['epochId'] as String?,
+        epochKey: json['epochKey'] != null
+            ? EpochKeyData.fromJson(json['epochKey'] as Map<String, dynamic>)
+            : null,
       );
 
   static MessageType _parseType(String? t) => switch (t) {
@@ -46,8 +61,11 @@ class ZippMessage {
   final String id;
   final String conversationId;
   final String senderId;
+  // DM fields
   final String? recipientCiphertext;
   final String? senderCiphertext;
+  // Group field
+  final String? ciphertext;
   final String? nonce;
   final MessageType type;
   final String? replyToId;
@@ -57,6 +75,9 @@ class ZippMessage {
   final DateTime? editedAt;
   final DateTime? deletedAt;
   final DateTime createdAt;
+  // Epoch
+  final String? epochId;
+  final EpochKeyData? epochKey;
 
   // Decrypted plaintext — populated client-side after decryption
   String? plaintext;
@@ -67,6 +88,7 @@ class ZippMessage {
     required this.senderId,
     this.recipientCiphertext,
     this.senderCiphertext,
+    this.ciphertext,
     this.nonce,
     required this.type,
     this.replyToId,
@@ -76,6 +98,8 @@ class ZippMessage {
     this.editedAt,
     this.deletedAt,
     required this.createdAt,
+    this.epochId,
+    this.epochKey,
     this.plaintext,
   });
 
@@ -83,6 +107,7 @@ class ZippMessage {
   bool get isEdited => editedAt != null;
   bool get isDeleted => deletedAt != null;
   bool get isDecrypted => plaintext != null;
+  bool get isGroupMessage => epochId != null;
 
   factory ZippMessage.fromJson(Map<String, dynamic> json) => ZippMessage(
         id: json['id'] as String,
@@ -90,6 +115,7 @@ class ZippMessage {
         senderId: json['senderId'] as String,
         recipientCiphertext: json['recipientCiphertext'] as String?,
         senderCiphertext: json['senderCiphertext'] as String?,
+        ciphertext: json['ciphertext'] as String?,
         nonce: json['nonce'] as String?,
         type: _parseType(json['type'] as String?),
         replyToId: json['replyToId'] as String?,
@@ -104,6 +130,10 @@ class ZippMessage {
         editedAt: json['editedAt'] != null ? DateTime.parse(json['editedAt'] as String) : null,
         deletedAt: json['deletedAt'] != null ? DateTime.parse(json['deletedAt'] as String) : null,
         createdAt: DateTime.parse(json['createdAt'] as String),
+        epochId: json['epochId'] as String?,
+        epochKey: json['epochKey'] != null
+            ? EpochKeyData.fromJson(json['epochKey'] as Map<String, dynamic>)
+            : null,
       );
 
   static MessageType _parseType(String? t) => switch (t) {
@@ -122,6 +152,7 @@ class ZippMessage {
     String? plaintext,
     String? recipientCiphertext,
     String? senderCiphertext,
+    String? ciphertext,
     String? nonce,
   }) =>
       ZippMessage(
@@ -130,6 +161,7 @@ class ZippMessage {
         senderId: senderId,
         recipientCiphertext: recipientCiphertext ?? this.recipientCiphertext,
         senderCiphertext: senderCiphertext ?? this.senderCiphertext,
+        ciphertext: ciphertext ?? this.ciphertext,
         nonce: nonce ?? this.nonce,
         type: type,
         replyToId: replyToId,
@@ -139,6 +171,8 @@ class ZippMessage {
         editedAt: editedAt ?? this.editedAt,
         deletedAt: deletedAt ?? this.deletedAt,
         createdAt: createdAt,
+        epochId: epochId,
+        epochKey: epochKey,
         plaintext: plaintext ?? this.plaintext,
       );
 }

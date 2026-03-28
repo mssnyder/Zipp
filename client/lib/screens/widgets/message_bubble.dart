@@ -1390,11 +1390,12 @@ Future<void> _showMediaContextMenu(
       const PopupMenuItem(value: 'save', child: _MenuRow(icon: Icons.save_alt_outlined, label: 'Save as...')),
     ],
   );
-  if (result == null) return;
+  if (result == null || !context.mounted) return;
   switch (result) {
     case 'copy':
       await _copyImageToClipboard(url, context, headers: headers);
     case 'save':
+      if (!context.mounted) return;
       await _saveMediaToDisk(url, defaultFilename, context, headers: headers);
   }
 }

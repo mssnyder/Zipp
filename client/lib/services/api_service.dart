@@ -274,6 +274,96 @@ class ApiService {
     return Conversation.fromJson(data['conversation'] as Map<String, dynamic>);
   }
 
+  Future<Conversation> createGroupConversation({
+    required List<String> participantIds,
+    required String name,
+  }) async {
+    final r = await _dio.post('/api/conversations', data: {
+      'participantIds': participantIds,
+      'isGroup': true,
+      'name': name,
+    });
+    final data = await _check(r);
+    return Conversation.fromJson(data['conversation'] as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> getConversationDetails(String convId) async {
+    final r = await _dio.get('/api/conversations/$convId');
+    return await _check(r);
+  }
+
+  Future<void> renameGroup(String convId, String name) async {
+    final r = await _dio.patch('/api/conversations/$convId', data: {'name': name});
+    await _check(r);
+  }
+
+  // ── Group members ────────────────────────────────────────────────────────
+
+  Future<void> inviteMembers({
+    required String convId,
+    required List<String> userIds,
+    required bool shareHistory,
+    required Map<String, dynamic> newEpoch,
+    List<Map<String, dynamic>>? epochKeys,
+  }) async {
+    final r = await _dio.post('/api/conversations/$convId/members', data: {
+      'userIds': userIds,
+      'shareHistory': shareHistory,
+      'newEpoch': newEpoch,
+      'epochKeys': ?epochKeys,
+    });
+    await _check(r);
+  }
+
+  Future<void> removeMember(String convId, String userId) async {
+    final r = await _dio.delete('/api/conversations/$convId/members/$userId', data: {});
+    await _check(r);
+  }
+
+  Future<void> changeRole(String convId, String userId, String role) async {
+    final r = await _dio.patch('/api/conversations/$convId/members/$userId/role', data: {'role': role});
+    await _check(r);
+  }
+
+  Future<void> leaveGroup(String convId) async {
+    final r = await _dio.post('/api/conversations/$convId/leave', data: {});
+    await _check(r);
+  }
+
+  // ── Epochs ───────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>?> getCurrentEpoch(String convId) async {
+    final r = await _dio.get('/api/conversations/$convId/epoch');
+    final data = await _check(r);
+    return data['epoch'] as Map<String, dynamic>?;
+  }
+
+  Future<List<Map<String, dynamic>>> getEpochs(String convId) async {
+    final r = await _dio.get('/api/conversations/$convId/epochs');
+    final data = await _check(r);
+    return List<Map<String, dynamic>>.from(data['epochs'] as List);
+  }
+
+  Future<Map<String, dynamic>> createEpoch(String convId, List<Map<String, dynamic>> keys) async {
+    final r = await _dio.post('/api/conversations/$convId/epochs', data: {'keys': keys});
+    return await _check(r);
+  }
+
+  Future<void> addEpochKeys(String convId, String epochId, List<Map<String, dynamic>> keys) async {
+    final r = await _dio.post('/api/conversations/$convId/epochs/$epochId/keys', data: {'keys': keys});
+    await _check(r);
+  }
+
+  /// Fetch public keys for multiple users.
+  Future<Map<String, String>> fetchPublicKeys(List<String> userIds) async {
+    final result = <String, String>{};
+    for (final uid in userIds) {
+      final key = await fetchPublicKey(uid);
+      if (key != null) result[uid] = key;
+    }
+    return result;
+  }
+
   // ── Messages ──────────────────────────────────────────────────────────────
 
   Future<List<ZippMessage>> getMessages(String conversationId, {String? before}) async {
@@ -292,18 +382,26 @@ class ApiService {
 
   Future<ZippMessage> sendMessage({
     required String conversationId,
-    required String recipientCiphertext,
-    required String senderCiphertext,
     required String nonce,
     String type = 'TEXT',
     String? replyToId,
+    // DM fields
+    String? recipientCiphertext,
+    String? senderCiphertext,
+    // Group fields
+    String? ciphertext,
+    String? epochId,
+    Map<String, dynamic>? epoch,
   }) async {
     final r = await _dio.post('/api/conversations/$conversationId/messages', data: {
-      'recipientCiphertext': recipientCiphertext,
-      'senderCiphertext': senderCiphertext,
       'nonce': nonce,
       'type': type,
       'replyToId': ?replyToId,
+      'recipientCiphertext': ?recipientCiphertext,
+      'senderCiphertext': ?senderCiphertext,
+      'ciphertext': ?ciphertext,
+      'epochId': ?epochId,
+      'epoch': ?epoch,
     });
     final data = await _check(r);
     return ZippMessage.fromJson(data['message'] as Map<String, dynamic>);
@@ -316,14 +414,18 @@ class ApiService {
   Future<ZippMessage> editMessage({
     required String conversationId,
     required String messageId,
-    required String recipientCiphertext,
-    required String senderCiphertext,
     required String nonce,
+    // DM fields
+    String? recipientCiphertext,
+    String? senderCiphertext,
+    // Group field
+    String? ciphertext,
   }) async {
     final r = await _dio.patch('/api/conversations/$conversationId/messages/$messageId', data: {
-      'recipientCiphertext': recipientCiphertext,
-      'senderCiphertext': senderCiphertext,
       'nonce': nonce,
+      'recipientCiphertext': ?recipientCiphertext,
+      'senderCiphertext': ?senderCiphertext,
+      'ciphertext': ?ciphertext,
     });
     final data = await _check(r);
     return ZippMessage.fromJson(data['message'] as Map<String, dynamic>);

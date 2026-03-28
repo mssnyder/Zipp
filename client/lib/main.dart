@@ -65,11 +65,16 @@ class _ZippAppState extends State<ZippApp> with WidgetsBindingObserver {
         GoRoute(path: '/', builder: (_, _) => const AdaptiveHome()),
         GoRoute(
           path: '/chat/:convId',
-          builder: (_, state) => ChatScreen(
-            conversationId: state.pathParameters['convId']!,
-            participantId: state.uri.queryParameters['pid'] ?? '',
-            participantName: Uri.decodeComponent(state.uri.queryParameters['name'] ?? ''),
-          ),
+          builder: (_, state) {
+            final convId = state.pathParameters['convId']!;
+            final pid = state.uri.queryParameters['pid'] ?? '';
+            final name = Uri.decodeComponent(state.uri.queryParameters['name'] ?? '');
+            return ChatScreen(
+              conversationId: convId,
+              participantId: pid,
+              participantName: name,
+            );
+          },
         ),
         GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
       ],

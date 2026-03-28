@@ -129,6 +129,102 @@ class CryptoService {
     }
   }
 
+  // ── Epoch-based group E2E encryption ──────────────────────────────────────
+
+  /// Generate a random AES-256-GCM epoch key.
+  /// Returns the raw key as a base64url string.
+  static Future<String> generateEpochKey() async {
+    final key = await _aesGcm.newSecretKey();
+    final bytes = await key.extractBytes();
+    return base64Url.encode(Uint8List.fromList(bytes));
+  }
+
+  /// Wrap an epoch key for a specific user using DH key exchange.
+  /// Returns {encryptedKey, keyNonce} both base64url encoded.
+  static Future<({String encryptedKey, String keyNonce})> wrapEpochKeyForUser(
+    String epochKeyB64,
+    SimpleKeyPair myKp,
+    String recipientPublicKeyB64,
+  ) async {
+    final recipientPub = SimplePublicKey(
+      base64Url.decode(recipientPublicKeyB64),
+      type: KeyPairType.x25519,
+    );
+    final wrappingKey = await _deriveKey(myKp, recipientPub);
+    final epochKeyBytes = base64Url.decode(epochKeyB64);
+    final secretBox = await _aesGcm.encrypt(epochKeyBytes, secretKey: wrappingKey);
+    final combined = Uint8List.fromList([...secretBox.cipherText, ...secretBox.mac.bytes]);
+    return (
+      encryptedKey: base64Url.encode(combined),
+      keyNonce: base64Url.encode(secretBox.nonce),
+    );
+  }
+
+  /// Unwrap an epoch key using the wrapper's public key.
+  /// Returns the raw epoch key as base64url, or null on failure.
+  static Future<String?> unwrapEpochKey(
+    String encryptedKeyB64,
+    String keyNonceB64,
+    SimpleKeyPair myKp,
+    String wrapperPublicKeyB64,
+  ) async {
+    try {
+      final wrapperPub = SimplePublicKey(
+        base64Url.decode(wrapperPublicKeyB64),
+        type: KeyPairType.x25519,
+      );
+      final wrappingKey = await _deriveKey(myKp, wrapperPub);
+      final raw = base64Url.decode(encryptedKeyB64);
+      final mac = Mac(raw.sublist(raw.length - 16));
+      final cipherBytes = raw.sublist(0, raw.length - 16);
+      final nonce = base64Url.decode(keyNonceB64);
+      final secretBox = SecretBox(cipherBytes, nonce: nonce, mac: mac);
+      final epochKeyBytes = await _aesGcm.decrypt(secretBox, secretKey: wrappingKey);
+      return base64Url.encode(Uint8List.fromList(epochKeyBytes));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Encrypt a message body with an epoch key (symmetric AES-256-GCM).
+  /// Returns {ciphertext, nonce} both base64url encoded.
+  static Future<({String ciphertext, String nonce})> encryptWithEpochKey(
+    String plaintext,
+    String epochKeyB64,
+  ) async {
+    final aesKey = SecretKey(base64Url.decode(epochKeyB64));
+    final secretBox = await _aesGcm.encrypt(
+      utf8.encode(plaintext),
+      secretKey: aesKey,
+    );
+    final combined = Uint8List.fromList([...secretBox.cipherText, ...secretBox.mac.bytes]);
+    return (
+      ciphertext: base64Url.encode(combined),
+      nonce: base64Url.encode(secretBox.nonce),
+    );
+  }
+
+  /// Decrypt a message body with an epoch key.
+  /// Returns plaintext string, or null if decryption fails.
+  static Future<String?> decryptWithEpochKey(
+    String ciphertextB64,
+    String nonceB64,
+    String epochKeyB64,
+  ) async {
+    try {
+      final aesKey = SecretKey(base64Url.decode(epochKeyB64));
+      final raw = base64Url.decode(ciphertextB64);
+      final mac = Mac(raw.sublist(raw.length - 16));
+      final cipherBytes = raw.sublist(0, raw.length - 16);
+      final nonce = base64Url.decode(nonceB64);
+      final secretBox = SecretBox(cipherBytes, nonce: nonce, mac: mac);
+      final plain = await _aesGcm.decrypt(secretBox, secretKey: aesKey);
+      return utf8.decode(plain);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Key backup: PBKDF2 + AES-256-GCM wrapping ───────────────────────────
 
   /// Derive wrapping key bytes using PBKDF2 in an isolate to avoid blocking UI.

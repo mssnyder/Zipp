@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,12 +6,15 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../models/conversation.dart';
 import '../models/message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import 'widgets/attachment_preview.dart';
+import 'widgets/group_avatar.dart';
+import 'widgets/group_settings_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/message_input.dart';
 import 'widgets/typing_indicator.dart';
@@ -26,8 +28,8 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.conversationId,
-    required this.participantId,
-    required this.participantName,
+    this.participantId = '',
+    this.participantName = '',
     this.embedded = false,
   });
 
@@ -42,7 +44,6 @@ class _ChatScreenState extends State<ChatScreen> {
   ZippMessage? _editingMessage;
   bool _loadingMore = false;
   bool _isDragging = false;
-  Offset? _backSwipeStart;
 
   @override
   void initState() {
@@ -97,25 +98,43 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Conversation? get _conv => context.read<ChatProvider>().conversationById(widget.conversationId);
+  bool get _isGroup => _conv?.isGroup ?? false;
+
   Future<void> _sendText(String text) async {
     final chat = context.read<ChatProvider>();
-    await chat.sendTextMessage(
-      conversationId: widget.conversationId,
-      text: text,
-      recipientId: widget.participantId,
-      replyToId: _replyingTo?.id,
-    );
+    if (_isGroup) {
+      await chat.sendGroupTextMessage(
+        conversationId: widget.conversationId,
+        text: text,
+        replyToId: _replyingTo?.id,
+      );
+    } else {
+      await chat.sendTextMessage(
+        conversationId: widget.conversationId,
+        text: text,
+        recipientId: widget.participantId,
+        replyToId: _replyingTo?.id,
+      );
+    }
     if (mounted) setState(() => _replyingTo = null);
     _scrollToBottom();
   }
 
   Future<void> _sendGif(Map<String, dynamic> gif) async {
     final chat = context.read<ChatProvider>();
-    await chat.sendGifMessage(
-      conversationId: widget.conversationId,
-      gifResult: gif,
-      recipientId: widget.participantId,
-    );
+    if (_isGroup) {
+      await chat.sendGroupGifMessage(
+        conversationId: widget.conversationId,
+        gifResult: gif,
+      );
+    } else {
+      await chat.sendGifMessage(
+        conversationId: widget.conversationId,
+        gifResult: gif,
+        recipientId: widget.participantId,
+      );
+    }
     _scrollToBottom();
   }
 
@@ -124,13 +143,22 @@ class _ChatScreenState extends State<ChatScreen> {
     final chat = context.read<ChatProvider>();
     try {
       final attachment = await api.uploadAttachment(bytes, filename);
-      await chat.sendAttachmentMessage(
-        conversationId: widget.conversationId,
-        attachment: attachment,
-        recipientId: widget.participantId,
-        type: type,
-        caption: caption,
-      );
+      if (_isGroup) {
+        await chat.sendGroupAttachmentMessage(
+          conversationId: widget.conversationId,
+          attachment: attachment,
+          type: type,
+          caption: caption,
+        );
+      } else {
+        await chat.sendAttachmentMessage(
+          conversationId: widget.conversationId,
+          attachment: attachment,
+          recipientId: widget.participantId,
+          type: type,
+          caption: caption,
+        );
+      }
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
@@ -205,7 +233,7 @@ class _ChatScreenState extends State<ChatScreen> {
         conversationId: widget.conversationId,
         messageId: messageId,
         newText: newText,
-        recipientId: widget.participantId,
+        recipientId: _isGroup ? '' : widget.participantId,
       );
       if (mounted) setState(() => _editingMessage = null);
     } catch (e) {
@@ -233,6 +261,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _showGroupSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ZippTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => GroupSettingsSheet(conversationId: widget.conversationId),
+    );
+  }
+
   bool get _isMobile {
     if (widget.embedded) return false;
     if (!kIsWeb) {
@@ -248,9 +288,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final chat = context.watch<ChatProvider>();
+    final api = context.read<ApiService>();
     final messages = chat.messagesFor(widget.conversationId);
     final typing = chat.typingIn(widget.conversationId);
     final myId = auth.user?.id ?? '';
+    final conv = chat.conversationById(widget.conversationId);
+    final isGroup = conv?.isGroup ?? false;
+    final convName = conv?.displayName ?? widget.participantName;
 
     // Mark as read when new messages arrive from the other person
     if (messages.length > _lastMsgCount && messages.isNotEmpty) {
@@ -267,65 +311,80 @@ class _ChatScreenState extends State<ChatScreen> {
         automaticallyImplyLeading: !widget.embedded,
         title: Row(
           children: [
-            Stack(
-              children: [
-                Builder(builder: (context) {
-                  final api = context.read<ApiService>();
-                  final avatarUrl = chat.conversations
-                      .where((c) => c.id == widget.conversationId)
-                      .map((c) => c.participant?.avatarUrl)
-                      .firstOrNull;
-                  return CircleAvatar(
-                    radius: 18,
-                    backgroundColor: ZippTheme.surfaceVariant,
-                    backgroundImage: avatarUrl != null ? NetworkImage(api.resolveUrl(avatarUrl)) : null,
-                    child: avatarUrl == null
-                        ? Text(
-                            widget.participantName.isNotEmpty ? widget.participantName[0].toUpperCase() : '?',
-                            style: const TextStyle(color: ZippTheme.accent1, fontWeight: FontWeight.w700),
-                          )
-                        : null,
-                  );
-                }),
-                if (chat.isOnline(widget.participantId))
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: ZippTheme.online,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ZippTheme.background, width: 2),
+            if (isGroup)
+              GroupAvatar(
+                participants: conv!.participants,
+                currentUserId: myId,
+                size: 36,
+                api: api,
+              )
+            else
+              Stack(
+                children: [
+                  Builder(builder: (context) {
+                    final avatarUrl = conv?.participant?.avatarUrl;
+                    return CircleAvatar(
+                      radius: 18,
+                      backgroundColor: ZippTheme.surfaceVariant,
+                      backgroundImage: avatarUrl != null ? NetworkImage(api.resolveUrl(avatarUrl)) : null,
+                      child: avatarUrl == null
+                          ? Text(
+                              convName.isNotEmpty ? convName[0].toUpperCase() : '?',
+                              style: const TextStyle(color: ZippTheme.accent1, fontWeight: FontWeight.w700),
+                            )
+                          : null,
+                    );
+                  }),
+                  if (chat.isOnline(widget.participantId))
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: ZippTheme.online,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: ZippTheme.background, width: 2),
+                        ),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(widget.participantName, style: const TextStyle(fontSize: 16)),
-                if (chat.isOnline(widget.participantId))
-                  const Text('Online',
-                      style: TextStyle(fontSize: 11, color: ZippTheme.online)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(convName, style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis),
+                  if (isGroup)
+                    Text('${conv!.participants.length} members',
+                        style: const TextStyle(fontSize: 11, color: ZippTheme.textSecondary))
+                  else if (chat.isOnline(widget.participantId))
+                    const Text('Online',
+                        style: TextStyle(fontSize: 11, color: ZippTheme.online)),
+                ],
+              ),
             ),
           ],
         ),
+        actions: [
+          if (isGroup)
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () => _showGroupSettings(context),
+            ),
+        ],
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onHorizontalDragStart: !_isMobile ? null : (d) => _backSwipeStart = d.globalPosition,
+        onHorizontalDragStart: !_isMobile ? null : (_) {},
         onHorizontalDragEnd: !_isMobile ? null : (d) {
-          _backSwipeStart = null;
           if ((d.primaryVelocity ?? 0) > 300 && context.mounted) {
             context.go('/');
           }
         },
-        onHorizontalDragCancel: !_isMobile ? null : () => _backSwipeStart = null,
+        onHorizontalDragCancel: !_isMobile ? null : () {},
         child: DropTarget(
         onDragEntered: (_) => setState(() => _isDragging = true),
         onDragExited: (_) => setState(() => _isDragging = false),
@@ -355,7 +414,27 @@ class _ChatScreenState extends State<ChatScreen> {
                             }
                             final msg = messages[messages.length - 1 - i];
                             final isMine = msg.senderId == myId;
-                            return MessageBubble(
+
+                            // In groups, show sender name when sender changes
+                            Widget? senderLabel;
+                            if (isGroup && !isMine) {
+                              final nextIdx = messages.length - 1 - i + 1;
+                              final prevMsg = nextIdx < messages.length ? messages[nextIdx] : null;
+                              if (prevMsg == null || prevMsg.senderId != msg.senderId) {
+                                final sender = conv?.participants
+                                    .cast<ConversationParticipant?>()
+                                    .firstWhere((p) => p!.id == msg.senderId, orElse: () => null);
+                                senderLabel = Padding(
+                                  padding: const EdgeInsets.only(left: 16, top: 8, bottom: 2),
+                                  child: Text(
+                                    sender?.name ?? 'Unknown',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ZippTheme.textSecondary),
+                                  ),
+                                );
+                              }
+                            }
+
+                            final bubble = MessageBubble(
                               message: msg,
                               isMine: isMine,
                               onReact: (emoji) => chat.toggleReaction(msg.id, widget.conversationId, emoji),
@@ -363,6 +442,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               onEdit: (m) => _onEdit(m),
                               onDelete: (m) => _onDelete(m),
                             ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0);
+
+                            if (senderLabel != null) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [senderLabel, bubble],
+                              );
+                            }
+                            return bubble;
                           },
                         ),
                 ),
