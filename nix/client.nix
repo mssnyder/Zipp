@@ -9,10 +9,11 @@
 # and server URL:
 #
 #   (pkgs.callPackage "${inputs.zipp}/nix/client.nix" {
-#     serverUrl = "https://messaging.example.com";
+#     serverUrl  = "https://messaging.example.com";
+#     # bundlePath = /custom/path/to/bundle;  # optional override
 #   })
 {
-  src ? ../client/bundle,
+  bundlePath ? ../client/bundle,
   serverUrl,
   lib,
   stdenv,
@@ -43,7 +44,7 @@ stdenv.mkDerivation {
   pname = "zipp";
   version = "0.1.0";
 
-  inherit src;
+  src = bundlePath;
 
   nativeBuildInputs = [
     autoPatchelfHook
