@@ -24,7 +24,7 @@
 #     # Or set secrets directly (ends up in the Nix store — fine for testing):
 #     secrets.sessionSecret = "my-dev-secret-min-32-chars-long!!";
 #   };
-zipp-server:
+{ zipp-server, zipp-web }:
 
 {
   config,
@@ -287,7 +287,6 @@ in
     # ── Data directories ──────────────────────────────────────────────
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir}                    0751 ${cfg.user} users -"
-      "d ${cfg.dataDir}/web                0755 ${cfg.user} users -"
       "d ${cfg.dataDir}/uploads            0750 ${cfg.user} users -"
       "d ${cfg.dataDir}/uploads/attachments 0750 ${cfg.user} users -"
       "d ${cfg.dataDir}/uploads/thumbs     0750 ${cfg.user} users -"
@@ -387,7 +386,7 @@ in
         };
 
         "/" = {
-          root = "${cfg.dataDir}/web";
+          root = "${zipp-web}";
           tryFiles = "$uri /index.html";
         };
       };

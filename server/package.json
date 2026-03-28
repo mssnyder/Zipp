@@ -2,7 +2,7 @@
   "name": "zipp-server",
   "version": "1.0.0",
   "description": "Zipp messaging server",
-  "license": "All Rights Reserved",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

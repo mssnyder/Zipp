@@ -58,5 +58,6 @@ buildNpmPackage {
   meta = {
     description = "Zipp messaging server";
     mainProgram = "zipp-server";
+    license = lib.licenses.gpl3Plus;
   };
 }

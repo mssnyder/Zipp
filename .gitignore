@@ -18,8 +18,8 @@ client/.packages
 client/build/
 client/pubspec.lock
 
-# Pre-built desktop bundle (tracked — used by Nix packaging)
-!client/bundle/
+# Pre-built bundles (built by GitHub Actions, fetched by Nix)
+client/bundle/
 
 # Android build artefacts
 client/android/.gradle/

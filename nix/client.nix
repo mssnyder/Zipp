@@ -1,22 +1,19 @@
-# Packages a pre-built Flutter Linux desktop bundle.
+# Fetches the pre-built Flutter Linux desktop client from a GitHub Release
+# and wraps it with the server URL injected at runtime.
 #
-# Since Flutter can't be built reproducibly inside a Nix sandbox,
-# this derivation wraps a pre-built bundle.  Build it first:
+# After a new release is created by GitHub Actions, update the tag and hash:
+#   nix-prefetch-url --unpack https://github.com/mssnyder/Zipp/releases/download/TAG/zipp-linux.tar.gz
 #
-#   cd client && nix develop && flutter build linux --release
-#
-# Then in your NixOS config, call this with the local build path
-# and server URL:
-#
+# In your NixOS config:
 #   (pkgs.callPackage "${inputs.zipp}/nix/client.nix" {
-#     serverUrl  = "https://messaging.example.com";
-#     # bundlePath = /custom/path/to/bundle;  # optional override
+#     serverUrl = "https://messaging.example.com";
 #   })
 {
-  bundlePath ? ../client/bundle,
   serverUrl,
+  clientRelease ? "client-20260328-00000000",
   lib,
   stdenv,
+  fetchurl,
   autoPatchelfHook,
   makeWrapper,
   wrapGAppsHook3,
@@ -40,11 +37,20 @@
   mpv-unwrapped,
 }:
 
+let
+  src = fetchurl {
+    url = "https://github.com/mssnyder/Zipp/releases/download/${clientRelease}/zipp-linux.tar.gz";
+    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  };
+in
+
 stdenv.mkDerivation {
   pname = "zipp";
-  version = "0.1.0";
+  version = clientRelease;
 
-  src = bundlePath;
+  inherit src;
+  sourceRoot = ".";
+  unpackCmd = "mkdir src && tar -xzf $curSrc -C src";
 
   nativeBuildInputs = [
     autoPatchelfHook
@@ -94,7 +100,7 @@ stdenv.mkDerivation {
 
     mkdir -p $out/opt/zipp $out/bin
 
-    cp -r lib data zipp $out/opt/zipp/
+    cp -r src/lib src/data src/zipp $out/opt/zipp/
 
     # Wrap the binary to inject the server URL at runtime.
     makeWrapper $out/opt/zipp/zipp $out/bin/zipp \
@@ -104,7 +110,7 @@ stdenv.mkDerivation {
     for size in 16 32 48 64 128 256 512 1024; do
       dir=$out/share/icons/hicolor/''${size}x''${size}/apps
       mkdir -p "$dir"
-      cp data/flutter_assets/assets/images/icon.png "$dir/zipp.png"
+      cp src/data/flutter_assets/assets/images/icon.png "$dir/zipp.png"
     done
 
     runHook postInstall
@@ -117,5 +123,6 @@ stdenv.mkDerivation {
   meta = {
     description = "Zipp – Private E2E encrypted messaging (desktop client)";
     mainProgram = "zipp";
+    license = lib.licenses.gpl3Plus;
   };
 }
