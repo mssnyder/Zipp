@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Updates the clientRelease tag and fetchurl hashes in the Nix client derivations
+# Updates the clientRelease tag and fetchzip hashes in the Nix client derivations
 # after GitHub Actions creates a new release.
 #
 # Usage: ./nix/update-client-release.sh [TAG]

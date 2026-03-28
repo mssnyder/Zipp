@@ -5,14 +5,15 @@
 {
   lib,
   stdenv,
-  fetchurl,
+  fetchzip,
   clientRelease ? "client-20260328-888c4376",
 }:
 
 let
-  src = fetchurl {
+  src = fetchzip {
     url = "https://github.com/mssnyder/Zipp/releases/download/${clientRelease}/zipp-web.tar.gz";
     hash = "sha256-Q86xQxQ3RM+fTK+j3YDIdu2K9CFA1s17BzuyAbHnVJo=";
+    stripRoot = false;
   };
 in
 
@@ -21,8 +22,6 @@ stdenv.mkDerivation {
   version = clientRelease;
 
   inherit src;
-  sourceRoot = ".";
-  unpackCmd = "mkdir src && tar -xzf $curSrc -C src";
 
   dontConfigure = true;
   dontBuild = true;
@@ -30,7 +29,7 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out
-    cp -r src/* $out/
+    cp -r * $out/
     runHook postInstall
   '';
 

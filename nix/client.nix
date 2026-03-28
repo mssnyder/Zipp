@@ -13,7 +13,7 @@
   clientRelease ? "client-20260328-888c4376",
   lib,
   stdenv,
-  fetchurl,
+  fetchzip,
   autoPatchelfHook,
   makeWrapper,
   wrapGAppsHook3,
@@ -38,9 +38,10 @@
 }:
 
 let
-  src = fetchurl {
+  src = fetchzip {
     url = "https://github.com/mssnyder/Zipp/releases/download/${clientRelease}/zipp-linux.tar.gz";
     hash = "sha256-XNFrCNiy5HookW2o2RplgGHv2ShgLI6ja3ykwhZnQkc=";
+    stripRoot = false;
   };
 in
 
@@ -49,8 +50,6 @@ stdenv.mkDerivation {
   version = clientRelease;
 
   inherit src;
-  sourceRoot = ".";
-  unpackCmd = "mkdir src && tar -xzf $curSrc -C src";
 
   nativeBuildInputs = [
     autoPatchelfHook
@@ -100,7 +99,7 @@ stdenv.mkDerivation {
 
     mkdir -p $out/opt/zipp $out/bin
 
-    cp -r src/lib src/data src/zipp $out/opt/zipp/
+    cp -r lib data zipp $out/opt/zipp/
 
     # Wrap the binary to inject the server URL at runtime.
     makeWrapper $out/opt/zipp/zipp $out/bin/zipp \
@@ -110,7 +109,7 @@ stdenv.mkDerivation {
     for size in 16 32 48 64 128 256 512 1024; do
       dir=$out/share/icons/hicolor/''${size}x''${size}/apps
       mkdir -p "$dir"
-      cp src/data/flutter_assets/assets/images/icon.png "$dir/zipp.png"
+      cp data/flutter_assets/assets/images/icon.png "$dir/zipp.png"
     done
 
     runHook postInstall
