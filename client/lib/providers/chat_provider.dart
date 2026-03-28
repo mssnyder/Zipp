@@ -935,6 +935,18 @@ class ChatProvider extends ChangeNotifier {
     _notifyNewMessage(convId, msg);
   }
 
+  /// Searches all loaded conversations for a participant with [senderId].
+  /// Falls back to 'Someone' only if the user truly isn't found anywhere.
+  String _findSenderName(String senderId) {
+    for (final conv in _conversations) {
+      for (final p in conv.participants) {
+        if (p.id == senderId) return p.name;
+      }
+      if (conv.participant?.id == senderId) return conv.participant!.name;
+    }
+    return 'Someone';
+  }
+
   void _notifyNewMessage(String convId, ZippMessage msg) {
     if (msg.senderId == currentUserId) return;
 
@@ -946,9 +958,9 @@ class ChatProvider extends ChangeNotifier {
         (p) => p!.id == msg.senderId,
         orElse: () => null,
       );
-      senderName = sender?.name ?? 'Someone';
+      senderName = sender?.name ?? _findSenderName(msg.senderId);
     } else {
-      senderName = conv?.participant?.name ?? 'Someone';
+      senderName = conv?.participant?.name ?? _findSenderName(msg.senderId);
     }
 
     final preview = (msg.plaintext != null && msg.type == MessageType.text)
