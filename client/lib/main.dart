@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
@@ -14,9 +16,57 @@ import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/profile_screen.dart';
 
+/// Ensures only one instance runs on Linux/desktop.
+/// If another instance is already running, sends it a focus signal and exits.
+/// Returns the bound server socket that must be kept alive for the app lifetime.
+ServerSocket? _singleInstanceSocket;
+
+Future<bool> _enforceSingleInstance() async {
+  if (kIsWeb || !Platform.isLinux) return true;
+
+  final uid = Platform.environment['UID'] ?? '1000';
+  final socketPath = '/tmp/zipp-$uid.sock';
+
+  // Try to connect to an existing instance
+  try {
+    final socket = await Socket.connect(
+      InternetAddress(socketPath, type: InternetAddressType.unix),
+      0,
+      timeout: const Duration(milliseconds: 200),
+    );
+    socket.write('focus\n');
+    await socket.flush();
+    await socket.close();
+    return false; // Another instance handled it
+  } catch (_) {
+    // No existing instance — become the primary
+  }
+
+  // Clean up stale socket file if present
+  final file = File(socketPath);
+  if (file.existsSync()) file.deleteSync();
+
+  _singleInstanceSocket = await ServerSocket.bind(
+    InternetAddress(socketPath, type: InternetAddressType.unix),
+    0,
+  );
+
+  _singleInstanceSocket!.listen((client) async {
+    client.listen((_) async {
+      await client.close();
+      DesktopManager.instance.showAndFocus();
+    });
+  });
+
+  return true;
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+
+  // Enforce single instance — focus existing window and exit if already running
+  if (!await _enforceSingleInstance()) exit(0);
 
   // Initialize desktop window + tray (no-op on web)
   await DesktopManager.instance.init();

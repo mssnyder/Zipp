@@ -231,14 +231,28 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Generates a recovery key, uploads the encrypted key backup, and sets
-  /// [_pendingRecoveryKey] so the UI can show it once.
+  /// Sets [_pendingRecoveryKey] from storage (reusing any existing key) or
+  /// generates a new one. Does NOT upload — call [finalizeRecoveryKeyBackup]
+  /// after the user acknowledges the dialog. Safe to call on every app start
+  /// until the backup is finalized (i.e. server backup exists).
   Future<void> _autoGenerateRecoveryKey() async {
     if (_keyPair == null) return;
+    final existing = await StorageService.getRecoveryKey();
+    final recoveryKey = existing ?? CryptoService.generateRecoveryKey();
+    if (existing == null) await StorageService.setRecoveryKey(recoveryKey);
+    _pendingRecoveryKey = recoveryKey;
+    // Upload deferred — finalized once the user acknowledges the dialog.
+  }
+
+  /// Encrypts the private key with [recoveryKey] (+ optional [passphrase]) and
+  /// uploads the backup. Called after the user acknowledges the recovery key dialog.
+  Future<void> finalizeRecoveryKeyBackup({String passphrase = ''}) async {
+    if (_keyPair == null || _pendingRecoveryKey == null) return;
     try {
-      final recoveryKey = CryptoService.generateRecoveryKey();
+      final recoveryKey = _pendingRecoveryKey!;
+      final secret = passphrase.isEmpty ? recoveryKey : '$recoveryKey$passphrase';
       final privBytes = await _keyPair!.extractPrivateKeyBytes();
-      final backup = await CryptoService.encryptPrivateKey(privBytes, recoveryKey);
+      final backup = await CryptoService.encryptPrivateKey(privBytes, secret);
       final localPub = await CryptoService.getPublicKeyBase64(_keyPair!);
       await _api.uploadPublicKey(
         localPub,
@@ -246,11 +260,8 @@ class AuthProvider extends ChangeNotifier {
         keySalt: backup.keySalt,
         keyNonce: backup.keyNonce,
       );
-      await StorageService.setRecoveryKey(recoveryKey);
-      _pendingRecoveryKey = recoveryKey;
       _needsKeyBackup = false;
     } catch (_) {
-      // If backup upload fails, fall back to prompting manually
       _needsKeyBackup = true;
     }
   }

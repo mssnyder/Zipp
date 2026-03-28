@@ -53,6 +53,10 @@ class DesktopManager with WindowListener {
     await TrayService.instance.dispose();
     windowManager.removeListener(this);
     _initialized = false;
+    // Clean up single-instance socket
+    final uid = Platform.environment['UID'] ?? '1000';
+    final socketFile = File('/tmp/zipp-$uid.sock');
+    if (socketFile.existsSync()) socketFile.deleteSync();
     // exit(0) avoids the FlutterEngineRemoveView crash on Linux
     exit(0);
   }

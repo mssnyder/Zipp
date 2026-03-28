@@ -37,7 +37,8 @@ class _AdaptiveHomeState extends State<AdaptiveHome> {
           barrierDismissible: false,
           builder: (_) => RecoveryKeyDialog(
             recoveryKey: auth.pendingRecoveryKey!,
-            onAcknowledged: () {
+            onAcknowledged: (passphrase) {
+              auth.finalizeRecoveryKeyBackup(passphrase: passphrase);
               auth.clearPendingRecoveryKey();
               Navigator.pop(context);
             },
